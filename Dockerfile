@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS dependencies
+FROM node:24.22.1-bookworm-slim AS dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -7,7 +7,7 @@ FROM dependencies AS build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
-FROM node:24-bookworm-slim AS runner
+FROM node:24.22.1-bookworm-slim AS runner
 ARG SALMON_RELEASE_REPOSITORY=duguiyu07/Salmon-Isle
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 SALMON_DATA_DIR=/data

@@ -1,6 +1,6 @@
 const fs=require('node:fs');
 const path=require('node:path');
-const {load}=require('js-yaml');
+const {parse}=require('yaml');
 function createUpdates({app,updater,saveBeforeInstall,defaults={},packagedConfigPath}){
   const profile=path.join(app.getPath('userData'),'program-update-source.json'),providerFile=path.join(app.getPath('userData'),'update-provider.yml');
   let saved={};try{if(fs.existsSync(profile))saved=JSON.parse(fs.readFileSync(profile,'utf8'));}catch{}
@@ -19,7 +19,7 @@ function createUpdates({app,updater,saveBeforeInstall,defaults={},packagedConfig
     url.pathname=url.pathname.replace(/\/?$/,'/');feedUrl=url.href;
     fs.mkdirSync(app.getPath('userData'),{recursive:true});
     fs.writeFileSync(profile+'.tmp',JSON.stringify({feedUrl}),{mode:0o600});fs.renameSync(profile+'.tmp',profile);
-    const packaged=packagedConfigPath&&fs.existsSync(packagedConfigPath)?load(fs.readFileSync(packagedConfigPath,'utf8'))||{}:{};
+    const packaged=packagedConfigPath&&fs.existsSync(packagedConfigPath)?parse(fs.readFileSync(packagedConfigPath,'utf8'))||{}:{};
     const config={...packaged,provider:'generic',url:feedUrl,...(defaults.publisherName?{publisherName:defaults.publisherName}:{})};
     fs.writeFileSync(providerFile,JSON.stringify(config),{mode:0o600});updater.updateConfigPath=providerFile;updater.setFeedURL({provider:'generic',url:feedUrl});
     update({feedUrl,phase:'idle',version:null,error:''});

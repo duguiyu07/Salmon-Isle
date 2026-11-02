@@ -40,11 +40,12 @@ test('desktop update flow preserves publisher verification and saves before inst
   updater.setFeedURL=()=>{};updater.checkForUpdates=async()=>{updater.emit('checking-for-update');updater.emit('update-available',{version:'1.2.0'});};
   updater.downloadUpdate=async()=>{updater.emit('download-progress',{percent:35});updater.emit('update-downloaded',{version:'1.2.0'});};
   updater.quitAndInstall=()=>{assert.equal(saved,true);installed=true;};
-  const config=path.join(root,'packaged.yml');fs.writeFileSync(config,JSON.stringify({publisherName:['Salmon Publisher']}));
+  const config=path.join(root,'packaged.yml');fs.writeFileSync(config,'provider: generic\nurl: https://old.test/\npublisherName:\n  - Salmon Publisher\nupdaterCacheDirName: salmon-cache\n');
   const updates=createUpdates({app:{getPath:()=>root,getVersion:()=>'1.1.0',isPackaged:true},updater,packagedConfigPath:config,saveBeforeInstall:async()=>{saved=true;}});
   await assert.rejects(()=>updates.check('file:///installer.exe'),/HTTPS/);
   assert.equal((await updates.check('https://releases.test/desktop')).phase,'available');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'update-provider.yml'),'utf8')).publisherName,['Salmon Publisher']);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'update-provider.yml'),'utf8')).updaterCacheDirName,'salmon-cache');
   assert.equal((await updates.download()).phase,'ready');await updates.install();assert.equal(installed,true);
   assert.equal(fs.existsSync(path.join(root,'content')),false);
 });

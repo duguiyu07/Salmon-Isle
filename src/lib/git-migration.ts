@@ -10,11 +10,15 @@ import {AppError} from './model';
 import {withRepositoryLock} from './repository-lock';
 
 export async function copyLibrary(source:string,target:string){
-  await createEmptyLibrary(target);
+  // Copy into absent directories: Node 24.22 rejects even an existing empty
+  // directory with errorOnExist:true. Check every target before writing anything.
+  for(const dir of libraryDirectories)if(fs.lstatSync(path.join(target,dir),{throwIfNoEntry:false}))throw new AppError('迁移目标包含已有内容目录，请使用空的内容工作区');
+  fs.mkdirSync(target,{recursive:true});
   for(const dir of libraryDirectories){
     if(dir==='media-meta')continue;const from=path.join(source,dir);
     if(fs.existsSync(from))fs.cpSync(from,path.join(target,dir),{recursive:true,errorOnExist:true,force:false,dereference:false});
   }
+  await createEmptyLibrary(target);
   const media=withLibrary(source,()=>listMedia());withLibrary(target,()=>{for(const row of media)writeMediaMetadata({...row,...(row.source?{source:row.source}:{source:undefined})});});
   return validateLibrary(target);
 }

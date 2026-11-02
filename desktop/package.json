@@ -1,7 +1,7 @@
 {
   "name": "salmon-isle-writer",
   "productName": "Salmon Isle Writer",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "dugite": "3.3.2",
-    "electron-updater": "6.8.12"
+    "electron-updater": "6.8.12",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "electron": "45.2.1",

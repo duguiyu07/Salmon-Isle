@@ -2,6 +2,8 @@
 
 许可协议：GPL-3.0-only
 
+源码与更新来自 <https://github.com/duguiyu07/Salmon-Isle>。当前待发布版本为 **1.1.2**；本次 CI 修复及重新发布步骤见 [发布修复指南](docs/release-fix-1.1.2.zh-CN.md)，服务器上线步骤见 [部署操作指南](docs/deployment-guide.zh-CN.md)。
+
 
 
 ## 本地启动
