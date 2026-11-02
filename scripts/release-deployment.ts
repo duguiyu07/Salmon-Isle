@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
 import appPackage from '../package.json';
 import {sourcePackage} from '../src/lib/source-package';
 import {fileHash} from '../src/lib/deployment';
+import {createTarGzip} from '../src/lib/tar-archive';
 
 const root = process.cwd(), output = path.resolve('dist/deployment'), publicDir = path.join(output, 'public');
 fs.mkdirSync(publicDir, {recursive: true});
@@ -18,8 +18,7 @@ const copies: [string, string][] = [
 ];
 for (const [from, to] of copies) fs.writeFileSync(path.join(server, to), fs.readFileSync(path.join(root, from), 'utf8').replaceAll('\r\n', '\n'));
 const serverFile = path.join(publicDir, `Salmon-Isle-Server-${appPackage.version}.tar.gz`);
-const tar = spawnSync('tar', ['-czf', serverFile, '-C', server, ...copies.map(([, to]) => to)], {encoding: 'utf8', windowsHide: true});
-if (tar.error || tar.status !== 0) throw new Error('服务器配置打包失败：' + (tar.error?.message || tar.stderr));
+createTarGzip(serverFile, server, copies.map(([, to]) => to));
 fs.copyFileSync('docs/deployment-guide.zh-CN.md', path.join(output, '操作指南.md'));
 fs.writeFileSync(path.join(output, 'README-FIRST.txt'),
   '先阅读 操作指南.md。\npublic/ 可公开；private/ 包含私人文章、草稿、密码散列和备份，不要上传到 GitHub。\n只有 private/migration-report.json 中 ready 为 true 时，报告内 archive 指向的数据包才可用于部署。\n');

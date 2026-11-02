@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
 import {isDeepStrictEqual} from 'node:util';
 import {backupData, restoreData} from './backup';
 import {closeDatabases} from './db';
@@ -9,6 +8,7 @@ import {analyzeWordPress, commitImport} from './wordpress';
 import {listArticles, listTrash, restoreItem, splitMarkdown, trashedArticleIds, trashItem} from './storage';
 import {getMedia} from './media';
 import {deploymentWordPress, fileHash, legacyUploadPaths, missingUploads, pageFingerprints} from './deployment';
+import {createTarGzip} from './tar-archive';
 
 export interface DeploymentDataOptions {
   sourceDir: string; xmlFile: string; mediaRoot: string; referenceXml?: string; outputDir: string;
@@ -111,8 +111,7 @@ export function prepareDeploymentData(input: DeploymentDataOptions) {
       const snapshot = backupData(); closeDatabases();
       const exported = path.join(run, 'export'); restoreData(snapshot, path.join(exported, 'data'));
       const archive = path.join(privateDir, `Salmon-Isle-Data-${stamp}.tar.gz`);
-      const tar = spawnSync('tar', ['-czf', archive, '-C', exported, 'data'], {encoding: 'utf8', windowsHide: true});
-      if (tar.error || tar.status !== 0) throw new Error('打包数据失败：' + (tar.error?.message || tar.stderr));
+      createTarGzip(archive, exported, ['data']);
       report.archive = archive; report.sha256 = fileHash(archive); report.ready = true;
       fs.writeFileSync(path.join(privateDir, 'SHA256SUMS.txt'), `${report.sha256}  ${path.basename(archive)}\n`, {mode: 0o600});
     }

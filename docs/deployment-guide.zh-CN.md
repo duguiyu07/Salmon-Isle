@@ -12,8 +12,8 @@
 
 | 路径 | 用途 | 是否可以公开 |
 | --- | --- | --- |
-| `public/Salmon-Isle-Source-1.1.2.zip` | 上传到 GitHub 的完整源码 | 可以 |
-| `public/Salmon-Isle-Server-1.1.2.tar.gz` | 服务器 Compose、环境模板、反代配置及维护脚本 | 可以 |
+| `public/Salmon-Isle-Source-1.1.3.zip` | 上传到 GitHub 的完整源码 | 可以 |
+| `public/Salmon-Isle-Server-1.1.3.tar.gz` | 服务器 Compose、环境模板、反代配置及维护脚本 | 可以 |
 | `public/SHA256SUMS.txt` | 公开交付物校验值 | 可以 |
 | `操作指南.md` | 本指南的副本 | 可以 |
 | `private/migration-report.json` | 最近一次文章与资源迁移报告 | 不可以 |
@@ -85,8 +85,8 @@ Get-Content -LiteralPath "$delivery\private\missing-media.txt"
 
 ```powershell
 npm run release:deployment
-Get-FileHash -Algorithm SHA256 -LiteralPath "$delivery\public\Salmon-Isle-Source-1.1.2.zip"
-Get-FileHash -Algorithm SHA256 -LiteralPath "$delivery\public\Salmon-Isle-Server-1.1.2.tar.gz"
+Get-FileHash -Algorithm SHA256 -LiteralPath "$delivery\public\Salmon-Isle-Source-1.1.3.zip"
+Get-FileHash -Algorithm SHA256 -LiteralPath "$delivery\public\Salmon-Isle-Server-1.1.3.tar.gz"
 ```
 
 本步骤不需要私人数据齐全，可以先完成公开源码发布。
@@ -103,8 +103,8 @@ $publish = Join-Path $project 'publish-workspace'
 git clone https://github.com/duguiyu07/Salmon-Isle.git "$publish"
 if ($LASTEXITCODE -ne 0) { throw '克隆失败，请先解决 GitHub 网络或登录问题' }
 $unpacked = Join-Path $delivery 'source-unpacked'
-Expand-Archive -LiteralPath "$delivery\public\Salmon-Isle-Source-1.1.2.zip" -DestinationPath $unpacked -Force
-$source = Join-Path $unpacked 'Salmon-Isle-Source-1.1.2'
+Expand-Archive -LiteralPath "$delivery\public\Salmon-Isle-Source-1.1.3.zip" -DestinationPath $unpacked -Force
+$source = Join-Path $unpacked 'Salmon-Isle-Source-1.1.3'
 Get-ChildItem -LiteralPath $source -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $publish -Recurse -Force }
 Set-Location -LiteralPath $publish
 git status --short
@@ -123,7 +123,7 @@ git config user.email '你的GitHub提交邮箱'
 ```powershell
 git add --all
 git diff --cached --stat
-git commit -m 'Release Salmon Isle 1.1.2 with deployment guide'
+git commit -m 'Release Salmon Isle 1.1.3 with deployment guide'
 if ($LASTEXITCODE -ne 0) { throw '提交失败，请查看上面的原因' }
 git push origin main
 if ($LASTEXITCODE -ne 0) { throw '推送失败，请完成 GitHub 登录后重试' }
@@ -133,23 +133,23 @@ HTTPS 推送出现浏览器授权时，登录 `duguiyu07` 并授权 Git Credenti
 如果仓库后来出现新提交，先检查 `git status`，再 `git pull --rebase origin main`、解决冲突并重试正常推送。
 不要上传整个 `dist/deployment`，不要将私有数据包作为 Release 附件。
 
-## 3. GitHub：发布 1.1.2
+## 3. GitHub：发布 1.1.3
 
 1. 打开仓库的 **Actions**，允许仓库运行工作流（若页面要求）。
 2. 检查 **Settings → Actions → General → Workflow permissions**，允许工作流写入仓库及包。
 3. 在本地发布目录推送版本标签：
 
 ```powershell
-git tag v1.1.2
-git push origin v1.1.2
+git tag v1.1.3
+git push origin v1.1.3
 ```
 
 4. 在 Actions 等待 `verify`、`website`、`desktop` 全部完成。
-5. 打开 Releases，确认 `v1.1.2` 中有安装程序、ZIP、blockmap、`latest.yml`、`release.json`、源码包、服务器配置包和校验文件。
+5. 打开 Releases，确认 `v1.1.3` 中有安装程序、ZIP、blockmap、`latest.yml`、`release.json`、源码包、服务器配置包和校验文件。
 6. 在 GitHub 账户的 **Packages → salmon-isle → Package settings → Change visibility** 将容器包设为 **Public**。
    GitHub 源码公开与容器包公开是两个设置；首次发布的包可能仍是私有的。
 
-镜像应为 `ghcr.io/duguiyu07/salmon-isle:1.1.2`。
+镜像应为 `ghcr.io/duguiyu07/salmon-isle:1.1.3`。
 打开以下地址应能下载 JSON：
 
 <https://github.com/duguiyu07/Salmon-Isle/releases/latest/download/release.json>
@@ -198,7 +198,7 @@ if (-not $report.ready -or -not (Test-Path -LiteralPath $report.archive)) { thro
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $report.archive).Hash.ToLowerInvariant() -ne $report.sha256) { throw '数据包校验失败' }
 [IO.File]::WriteAllText((Join-Path $delivery 'private\site-data.sha256'), "$($report.sha256)  site-data.tar.gz`n", [Text.Encoding]::ASCII)
 ssh $serverHost 'install -d -m 700 /opt/salmon-isle/incoming'
-scp "$delivery\public\Salmon-Isle-Server-1.1.2.tar.gz" "$delivery\public\SHA256SUMS.txt" "${serverHost}:/opt/salmon-isle/incoming/"
+scp "$delivery\public\Salmon-Isle-Server-1.1.3.tar.gz" "$delivery\public\SHA256SUMS.txt" "${serverHost}:/opt/salmon-isle/incoming/"
 scp "$($report.archive)" "${serverHost}:/opt/salmon-isle/incoming/site-data.tar.gz"
 scp "$delivery\private\site-data.sha256" "${serverHost}:/opt/salmon-isle/incoming/"
 ```
@@ -214,7 +214,7 @@ cd /opt/salmon-isle/incoming
 sha256sum -c --ignore-missing SHA256SUMS.txt
 sha256sum -c site-data.sha256
 cd /opt/salmon-isle
-tar -xzf incoming/Salmon-Isle-Server-1.1.2.tar.gz
+tar -xzf incoming/Salmon-Isle-Server-1.1.3.tar.gz
 test ! -e data && test ! -e .env
 ```
 
@@ -269,7 +269,7 @@ docker stats --no-stream
 - 密码文章：未输入密码看不到正文和受保护附件；输入正确密码后正常显示。
 - `/search`、`/rss.xml`、`/sitemap.xml`：不泄露草稿和受保护正文。
 - `/admin/login`：使用原管理员密码登录。后台核对已发布 16、草稿 20 以及 XML 对应回收站文章。
-- 后台「更新」：默认发布源是本仓库；首次安装版本为 1.1.2 时显示当前版本。
+- 后台「更新」：默认发布源是本仓库；首次安装版本为 1.1.3 时显示当前版本。
 
 服务器再执行：
 
@@ -293,11 +293,11 @@ docker compose logs --tail=50 blog
 https://github.com/duguiyu07/Salmon-Isle/releases/latest/download/release.json
 ```
 
-后台会提供带具体版本的更新命令。在服务器 `/opt/salmon-isle` 执行，例如未来发布 1.1.3 后：
+后台会提供带具体版本的更新命令。在服务器 `/opt/salmon-isle` 执行，例如未来发布 1.1.4 后：
 
 ```sh
 cd /opt/salmon-isle
-sh scripts/update-site.sh --image ghcr.io/duguiyu07/salmon-isle:1.1.3
+sh scripts/update-site.sh --image ghcr.io/duguiyu07/salmon-isle:1.1.4
 ```
 
 脚本先拉取新镜像，再停止写入并备份，保留原数据挂载，启动并等待健康检查。
@@ -338,7 +338,7 @@ sh scripts/restore-site.sh /opt/salmon-isle/backups/manual-实际时间/data.tar
 ```sh
 cd /opt/salmon-isle
 docker compose stop blog
-# 用编辑器把 .env 的镜像版本改回，例如 ghcr.io/duguiyu07/salmon-isle:1.1.2
+# 用编辑器把 .env 的镜像版本改回，例如 ghcr.io/duguiyu07/salmon-isle:1.1.3
 docker compose up -d --no-build --wait --wait-timeout 120 blog
 ```
 
