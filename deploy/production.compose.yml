@@ -1,0 +1,21 @@
+name: salmon-isle
+services:
+  blog:
+    image: ${SALMON_WEB_IMAGE:?Set SALMON_WEB_IMAGE to a published version}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      SALMON_DATA_DIR: /data
+      SALMON_ORIGIN: ${SALMON_ORIGIN:?Set the HTTPS site origin}
+      SALMON_SECURE_COOKIES: "true"
+      SALMON_RELEASE_MANIFEST_URL: ${SALMON_RELEASE_MANIFEST_URL}
+      SALMON_DESKTOP_UPDATE_URL: ${SALMON_DESKTOP_UPDATE_URL}
+    volumes:
+      - ./data:/data:Z
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

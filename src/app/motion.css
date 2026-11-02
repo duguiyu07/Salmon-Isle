@@ -1,0 +1,147 @@
+/* Shared UI motion. Editable text stays still; only interface surfaces animate. */
+:root{
+  --ui-fast:140ms;
+  --ui-duration:200ms;
+  --ui-drawer:240ms;
+  --ui-ease:cubic-bezier(.2,.7,.2,1);
+  --ui-glass:color-mix(in srgb,var(--paper) 88%,transparent);
+  --ui-glass-panel:color-mix(in srgb,var(--paper) 92%,transparent);
+  --ui-glass-heading:color-mix(in srgb,var(--paper) 72%,transparent);
+}
+
+body{transition:background-color var(--ui-duration) ease,color var(--ui-duration) ease}
+:where(button,a,input,select,textarea,summary),
+.button,.icon-button,.outline-link,.text-button,.writing-toolbar button,
+.admin-primary-nav>button{
+  transition:background-color var(--ui-fast) ease,color var(--ui-fast) ease,
+    border-color var(--ui-fast) ease,box-shadow var(--ui-fast) ease,
+    opacity var(--ui-fast) ease,transform var(--ui-fast) var(--ui-ease);
+}
+:where(.writing-view-modes,.visual-tab-segment,.tree-row,.tree-root,.sidebar-tabs button){
+  transition:background-color var(--ui-fast) ease,color var(--ui-fast) ease,
+    border-color var(--ui-fast) ease,box-shadow var(--ui-fast) ease;
+}
+:where(.tree-chevron svg,.block-parent-menu>summary svg,.header-tools svg){
+  transition:transform var(--ui-fast) var(--ui-ease);
+}
+:where(.button,.icon-button,.outline-link,.writing-inline-plus):enabled:active,
+a:is(.button,.outline-link):active{transform:scale(.97)}
+
+@media(hover:hover) and (pointer:fine){
+  :where(.button,.icon-button,.outline-link,.writing-inline-plus):not(:disabled):hover{transform:translateY(-1px)}
+  .article-card,.admin-article-card,.index-shortcuts .shortcut-card{
+    transition:transform var(--ui-duration) var(--ui-ease),
+      background-color var(--ui-duration) ease,border-color var(--ui-duration) ease,
+      box-shadow var(--ui-duration) ease;
+  }
+  .article-card:hover,.admin-article-card:hover,.index-shortcuts .shortcut-card:hover{
+    transform:translateY(-2px);box-shadow:0 5px 18px #0000000d;
+  }
+  .header-tools .icon-button:hover svg{transform:rotate(-8deg)}
+}
+
+/* Background alpha keeps labels and icons fully opaque in both themes. */
+.admin-topbar,.writing-toolbar,.selection-toolbar,.slash-menu,
+.floating-block-controls,.block-more-content,.block-parent-menu>div,
+.writing-insert-options,.writing-menu-ball,.reader-toggle,
+.visual-math-popup,dialog:not(.lightbox){
+  background:var(--ui-glass);
+  -webkit-backdrop-filter:blur(14px) saturate(115%);
+  backdrop-filter:blur(14px) saturate(115%);
+}
+.writing-menu-panel,.writing-article-settings,.article-shell .reader-sidebar{
+  background:var(--ui-glass-panel);
+  -webkit-backdrop-filter:blur(18px) saturate(115%);
+  backdrop-filter:blur(18px) saturate(115%);
+}
+.writing-menu-heading{
+  background:var(--ui-glass-heading);
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+}
+
+@keyframes ui-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes ui-pop-in{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}
+@keyframes ui-pop-above{from{opacity:0;translate:0 -5px}to{opacity:1;translate:0 0}}
+.selection-toolbar,.slash-menu,.floating-block-controls,.writing-insert-options,
+.block-more[open]>.block-more-content,.block-parent-menu[open]>div,
+.visual-math-popup:not([hidden]){
+  animation:ui-pop-in var(--ui-fast) var(--ui-ease);
+}
+.writing-inline-insert.insert-above>.writing-insert-options{animation-name:ui-pop-above}
+.admin-notice,.toast,.import-preview,.empty-state,
+.admin-main>.admin-page-heading,.admin-stats,.admin-catalog,.admin-article-list,
+.site-identity,.site-navigation,.home-section,.knowledge-heading,.knowledge-layout,
+.article-header,.article-neighbors,.article-page>.markdown-body,
+.standalone-page>.markdown-body,.login-card,.settings-grid,.admin-table-scroll,
+.import-upload,.page-source-grid,.page-editor-preview,
+.editor-text-area>div:not([hidden]),
+.content-tab:not([hidden]):not([data-tab-hidden]),.sidebar-tabs+nav{
+  animation:ui-fade-in var(--ui-duration) ease;
+}
+
+/* Discrete display transitions retain the closing surface without delaying focus. */
+.writing-menu-panel{
+  opacity:1;translate:0 0;
+  transition:translate var(--ui-drawer) var(--ui-ease),opacity var(--ui-duration) ease,
+    display var(--ui-drawer) allow-discrete;
+}
+.writing-menu-panel[hidden]{opacity:0;translate:100% 0;pointer-events:none}
+.writing-menu-backdrop,.article-shell .reader-backdrop{
+  opacity:1;
+  transition:opacity var(--ui-duration) ease,display var(--ui-duration) allow-discrete;
+}
+.writing-menu-backdrop[hidden],.article-shell .reader-backdrop[hidden]{opacity:0;pointer-events:none}
+.writing-menu-ball{
+  opacity:1;scale:1;
+  transition:opacity var(--ui-fast) ease,scale var(--ui-fast) var(--ui-ease),
+    box-shadow var(--ui-fast) ease,background-color var(--ui-fast) ease,
+    display var(--ui-fast) allow-discrete;
+}
+.writing-menu-ball[hidden]{opacity:0;scale:.9;pointer-events:none}
+.writing-menu-ball.is-dragging{transition:none;scale:1}
+.article-shell .reader-sidebar{
+  transition:transform var(--ui-drawer) var(--ui-ease),visibility var(--ui-drawer);
+}
+.article-shell .reader-region{transition:margin-left var(--ui-drawer) var(--ui-ease)}
+.article-shell .reader-toggle{
+  transition:left var(--ui-drawer) var(--ui-ease),background-color var(--ui-fast) ease,
+    box-shadow var(--ui-fast) ease;
+}
+dialog{
+  opacity:0;
+  transition:opacity var(--ui-duration) ease,display var(--ui-duration) allow-discrete,
+    overlay var(--ui-duration) allow-discrete;
+}
+dialog[open]{opacity:1}
+dialog:not([open]),dialog:not([open])::backdrop{pointer-events:none}
+dialog::backdrop{
+  opacity:0;
+  transition:opacity var(--ui-duration) ease,display var(--ui-duration) allow-discrete,
+    overlay var(--ui-duration) allow-discrete;
+}
+dialog[open]::backdrop{opacity:1}
+
+@starting-style{
+  .writing-menu-panel:not([hidden]){opacity:0;translate:100% 0}
+  .writing-menu-backdrop:not([hidden]),.article-shell .reader-backdrop:not([hidden]),
+  dialog[open],dialog[open]::backdrop{opacity:0}
+  .writing-menu-ball:not([hidden]){opacity:0;scale:.9}
+}
+
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--ui-glass:var(--paper);--ui-glass-panel:var(--paper);--ui-glass-heading:var(--paper)}
+}
+@media(prefers-reduced-transparency:reduce),(forced-colors:active){
+  :root{--ui-glass:var(--paper);--ui-glass-panel:var(--paper);--ui-glass-heading:var(--paper)}
+  .admin-topbar,.writing-toolbar,.selection-toolbar,.slash-menu,
+  .floating-block-controls,.block-more-content,.block-parent-menu>div,
+  .writing-insert-options,.writing-menu-ball,.reader-toggle,.visual-math-popup,
+  .writing-menu-panel,.writing-menu-heading,.writing-article-settings,
+  .article-shell .reader-sidebar,dialog{
+    -webkit-backdrop-filter:none;backdrop-filter:none;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}

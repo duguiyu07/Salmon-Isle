@@ -1,0 +1,79 @@
+name: Release desktop and website
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+  packages: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:standalone
+  website:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and publish website
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then echo "Tag and package version differ" >&2; exit 1; fi
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build --build-arg SALMON_RELEASE_REPOSITORY="$GITHUB_REPOSITORY" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image:$version" -t "$image:latest" .
+          docker push "$image:$version"
+          docker push "$image:latest"
+  desktop:
+    needs: website
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:install
+      - run: npm run check
+      - run: npm test
+      - name: Build desktop
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          SALMON_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+        run: |
+          $env:SALMON_DESKTOP_UPDATE_URL="https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/"
+          npm run desktop:package
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          npm run release:source
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          npm run release:deployment
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Copy-Item dist/deployment/public/Salmon-Isle-Server-*.tar.gz dist/desktop/
+          npm run release:metadata
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version=(Get-Content package.json | ConvertFrom-Json).version
+          if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and package version differ'}
+          $assets=Get-ChildItem dist/desktop -File | Where-Object { $_.Name -match '\.(exe|zip|blockmap|yml|tar\.gz)$' -or $_.Name -in @('release.json','SHA256SUMS.txt') } | ForEach-Object { $_.FullName }
+          gh release view "v$version" *> $null
+          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --generate-notes}

@@ -1,0 +1,44 @@
+#!/bin/sh
+set -eu
+umask 077
+new_image=''
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "--image" ]; then echo "Usage: update-site.sh [--image ghcr.io/owner/source:version]" >&2; exit 1; fi
+  new_image=$2
+  case "$new_image" in ghcr.io/*:*) ;; *) echo "Invalid program image" >&2; exit 1 ;; esac
+  case "$new_image" in *[!a-zA-Z0-9._:/-]*) echo "Invalid program image" >&2; exit 1 ;; esac
+fi
+project=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project"
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+backup="$project/backups/program-$stamp"
+old_image=$(docker compose images -q blog)
+if [ -z "$old_image" ]; then echo "No existing website container. Start the website first." >&2; exit 1; fi
+rollback_image="salmon-isle-rollback:$stamp"
+docker image tag "$old_image" "$rollback_image"
+mkdir -p "$backup"
+docker compose config > "$backup/compose.yml"
+image=$(docker compose config --images blog)
+if [ -n "$new_image" ]; then docker pull "$new_image"
+elif [ "$image" = "salmon-isle:local" ]; then
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "Use --image with the image shown in the website update page." >&2; exit 1; fi
+  git diff --quiet && git diff --cached --quiet || { echo "Commit or stash source edits first." >&2; exit 1; }
+  git pull --ff-only
+  docker compose build --pull blog
+else docker compose pull blog; fi
+printf 'services:\n  blog:\n    image: %s\n    pull_policy: never\n' "$rollback_image" > "$backup/rollback.yml"
+restart_old() { docker compose -f "$project/compose.yml" -f "$backup/rollback.yml" up -d --no-deps --wait --wait-timeout 120 blog; }
+docker compose stop blog
+if ! tar -C "$project" -czf "$backup/data.tar.gz" data; then restart_old; echo "Backup failed; previous version restarted." >&2; exit 1; fi
+if [ -n "$new_image" ]; then
+  if [ -f .env ]; then cp .env "$backup/previous.env"; else touch .env; fi
+  awk -v value="$new_image" 'BEGIN {found=0} /^SALMON_WEB_IMAGE=/ {print "SALMON_WEB_IMAGE=" value;found=1;next} {print} END {if(!found)print "SALMON_WEB_IMAGE=" value}' .env > .env.program-next
+  mv .env.program-next .env
+  export SALMON_WEB_IMAGE="$new_image"
+fi
+if ! docker compose up -d --no-deps --wait --wait-timeout 120 blog; then
+  if [ -f "$backup/previous.env" ]; then cp "$backup/previous.env" .env; fi
+  export SALMON_WEB_IMAGE="$image"
+  restart_old; echo "Update failed; previous image restored. Backup: $backup" >&2; exit 1
+fi
+echo "Website updated. Persistent data retained. Backup: $backup"

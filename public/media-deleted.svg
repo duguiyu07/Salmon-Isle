@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" rx="3" fill="#e7e5e0"/>
+  <g fill="none" stroke="#8b8982" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="286" y="115" width="68" height="54" rx="3"/><path d="m288 158 18-18 16 14 12-10 18 20m-64-53 64 64"/>
+  </g>
+  <text x="320" y="214" text-anchor="middle" fill="#64625d" font-family="sans-serif" font-size="18">资源已删除</text>
+</svg>

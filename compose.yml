@@ -1,0 +1,38 @@
+services:
+  blog:
+    image: ${SALMON_WEB_IMAGE:-salmon-isle:local}
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      SALMON_ORIGIN: ${SALMON_ORIGIN:-http://localhost:3000}
+      SALMON_SECURE_COOKIES: ${SALMON_SECURE_COOKIES:-false}
+      SALMON_ADMIN_HASH: ${SALMON_ADMIN_HASH:-}
+      SALMON_DATA_DIR: /data
+      SALMON_CONTENT_REPO_DIR: ${SALMON_CONTENT_REPO_DIR:-}
+      SALMON_CONTENT_REMOTE: ${SALMON_CONTENT_REMOTE:-}
+      SALMON_CONTENT_BRANCH: ${SALMON_CONTENT_BRANCH:-main}
+      SALMON_SYNC_INTERVAL_MS: ${SALMON_SYNC_INTERVAL_MS:-30000}
+      SALMON_RELEASE_MANIFEST_URL: ${SALMON_RELEASE_MANIFEST_URL:-}
+      SALMON_DESKTOP_UPDATE_URL: ${SALMON_DESKTOP_UPDATE_URL:-}
+    volumes:
+      - ./data:/data
+    stop_grace_period: 30s
+  tools:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: build
+    user: "1000:1000"
+    environment:
+      SALMON_DATA_DIR: /data
+      SALMON_ADMIN_HASH: ${SALMON_ADMIN_HASH:-}
+      SALMON_CONTENT_REMOTE: ${SALMON_CONTENT_REMOTE:-}
+      SALMON_CONTENT_BRANCH: ${SALMON_CONTENT_BRANCH:-main}
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+      - ./restored-data:/restore-data
+    entrypoint: ["node", "node_modules/tsx/dist/cli.mjs"]
+    command: ["scripts/setup.ts"]

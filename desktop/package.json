@@ -1,0 +1,64 @@
+{
+  "name": "salmon-isle-writer",
+  "productName": "Salmon Isle Writer",
+  "version": "1.1.0",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duguiyu07/Salmon-Isle.git"
+  },
+  "private": true,
+  "description": "Salmon Isle offline writing and Git content management",
+  "author": "Salmon Isle contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-builder --config electron-builder.config.cjs --win nsis zip --x64 --publish never",
+    "package:dir": "electron-builder --config electron-builder.config.cjs --win --x64 --dir --publish never",
+    "smoke": "electron . --smoke"
+  },
+  "dependencies": {
+    "dugite": "3.3.2",
+    "electron-updater": "6.8.12"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "org.salmonisle.writer",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "../dist/desktop"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "utility.cjs",
+      "icon.ico",
+      "web/**/*",
+      "package.json",
+      "updates.cjs",
+      "update-defaults.json"
+    ],
+    "asarUnpack": [
+      "web/**/*",
+      "node_modules/dugite/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "artifactName": "Salmon-Isle-Writer-${version}-${arch}.${ext}",
+    "npmRebuild": false
+  }
+}

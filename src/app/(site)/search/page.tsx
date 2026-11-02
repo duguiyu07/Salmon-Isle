@@ -1,0 +1,6 @@
+import { ArticleCard } from '@/components/article-card';
+import { listArticles,listFolders,searchIndex } from '@/lib/storage';
+import { getViewer } from '@/lib/auth';
+import { publicArticle,visibility } from '@/lib/access';
+export const metadata={title:'搜索',robots:{index:false}};
+export default async function Search({searchParams}:{searchParams:Promise<{q?:string}>}){const q=((await searchParams).q||'').trim().slice(0,200);const viewer=await getViewer();const folders=listFolders();const matches=q?searchIndex(q):new Set<string>();const results=q?listArticles().filter(a=>a.kind==='post'&&a.status==='published'&&(a.title.toLowerCase().includes(q.toLowerCase())||(!visibility(a,folders).restricted&&matches.has(a.id)))).map(a=>publicArticle(a,viewer,folders)).filter(a=>a!==null):[];return <main id="main" className="reading-width search-page"><h1>{q?`「${q}」`:'寻找一些什么？'}</h1><p className="muted">{q?`找到 ${results.length} 篇相关内容`:'输入关键词，搜索岛上的记录。'}</p><form className="search-form"><input name="q" defaultValue={q} placeholder="搜索文章…" aria-label="搜索关键词" required/><button className="button primary">搜索</button></form><div className="article-list">{results.map(a=><ArticleCard key={a.id} article={a}/>)}</div></main>;}

@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import YAML from 'yaml';
+import appPackage from '../package.json';
+import {releaseRepository} from '../src/lib/releases';
+const version=appPackage.version,dir=path.resolve('dist','desktop'),name='Salmon-Isle-Writer-'+version+'-x64.exe',file=path.join(dir,name);
+if(!fs.existsSync(file))throw new Error('请先生成 Windows 安装包：'+file);
+const bytes=fs.readFileSync(file),sha512=createHash('sha512').update(bytes).digest('base64');
+const option=process.argv.indexOf('--repository'),repository=releaseRepository(option>=0?process.argv[option+1]:process.env.GITHUB_REPOSITORY||undefined);
+if(repository&&!/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$/.test(repository))throw new Error('发布仓库格式应为 owner/repository');
+const base=repository?'https://github.com/'+repository+'/releases/download/v'+version+'/':'',url=base+name;
+fs.writeFileSync(path.join(dir,'latest.yml'),YAML.stringify({version,files:[{url,sha512,size:bytes.length}],path:url,sha512,releaseDate:new Date().toISOString()}));
+const files=fs.readdirSync(dir).filter(name=>name.includes(version)&&/\.(exe|zip|blockmap|tar\.gz)$/.test(name)||name==='latest.yml');
+if(repository){
+  fs.writeFileSync(path.join(dir,'release.json'),JSON.stringify({version,notesUrl:'https://github.com/'+repository+'/releases/tag/v'+version,desktopFeed:'https://github.com/'+repository+'/releases/latest/download/',dockerImage:'ghcr.io/'+repository.toLowerCase()+':'+version},null,2)+'\n');
+  console.log('已生成 latest.yml、release.json 和 SHA256SUMS.txt。');
+}else console.log('已生成 latest.yml 和 SHA256SUMS.txt。配置源码发布仓库后运行 npm run release:metadata -- --repository owner/source 生成 release.json。');
+if(repository)files.push('release.json');
+fs.writeFileSync(path.join(dir,'SHA256SUMS.txt'),files.map(name=>createHash('sha256').update(fs.readFileSync(path.join(dir,name))).digest('hex')+'  '+name).join('\n')+'\n');
