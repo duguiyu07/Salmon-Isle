@@ -1,6 +1,6 @@
 {
   "name": "salmon-isle",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
@@ -28,7 +28,7 @@
     "migrate:pages": "tsx scripts/migrate-pages.ts",
     "test:standalone": "tsx tests/http-smoke.ts --standalone",
     "migrate:git": "tsx scripts/migrate-git.ts",
-    "desktop:install": "npm --prefix desktop ci",
+    "desktop:install": "npm --prefix desktop ci && npm --prefix desktop run runtime:install",
     "desktop:prepare": "tsx scripts/prepare-desktop.ts",
     "desktop:start": "npm --prefix desktop start",
     "desktop:package": "npm run build && npm run desktop:prepare && npm --prefix desktop run package",
