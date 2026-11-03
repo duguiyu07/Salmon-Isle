@@ -59,13 +59,13 @@ function sessionFixture(save:(snapshot:DraftDocument,tokens:DraftTokens)=>Promis
 function result(snapshot:DraftDocument,version='draft-1'):DraftSaveResult{
   return {article:{...snapshot,id:'test',version:'base-1',hasPassword:false} as DraftSaveResult['article'],draft:{articleId:'test',baseVersion:'base-1',draftVersion:version,savedAt:new Date().toISOString(),document:snapshot}};
 }
-test('autosave uses a 60 second clock and skips unchanged documents',async context=>{
+test('autosave uses a 5 second clock and skips unchanged documents',async context=>{
   context.mock.timers.enable({apis:['setInterval']});
   let saves=0;const fixture=sessionFixture(async snapshot=>{saves++;return result(snapshot);});fixture.session.startAutosave();
-  context.mock.timers.tick(60000);await Promise.resolve();assert.equal(saves,0);
-  fixture.change({body:'改变'});context.mock.timers.tick(59999);await Promise.resolve();assert.equal(saves,0);
+  context.mock.timers.tick(5000);await Promise.resolve();assert.equal(saves,0);
+  fixture.change({body:'改变'});context.mock.timers.tick(4999);await Promise.resolve();assert.equal(saves,0);
   context.mock.timers.tick(1);await fixture.session.save();assert.equal(saves,1);assert.equal(fixture.session.dirty(),false);
-  context.mock.timers.tick(120000);await fixture.session.save();assert.equal(saves,1);
+  context.mock.timers.tick(10000);await fixture.session.save();assert.equal(saves,1);
 });
 test('in-flight saves preserve newer typing and serialize manual saves with new draft versions',async()=>{
   let release!:(value:DraftSaveResult)=>void;const requests:{snapshot:DraftDocument;tokens:DraftTokens}[]=[];

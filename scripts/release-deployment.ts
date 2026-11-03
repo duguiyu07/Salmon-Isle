@@ -13,7 +13,7 @@ fs.writeFileSync(sourceFile, source.bytes);
 const server = path.join(output, 'server-files'); fs.mkdirSync(path.join(server, 'scripts'), {recursive: true});
 const copies: [string, string][] = [
   ['deploy/production.compose.yml', 'compose.yml'], ['deploy/production.env.example', '.env.example'],
-  ['deploy/baota-proxy.conf', 'baota-proxy.conf'], ['scripts/update-site.sh', 'scripts/update-site.sh'],
+  ['deploy/baota-proxy.conf', 'baota-proxy.conf'], ['scripts/update-site.sh', 'scripts/update-site.sh'], ['scripts/update-site.ps1', 'scripts/update-site.ps1'], ['docs/upgrade-2.0.zh-CN.md', '升级到2.0.md'],
   ['deploy/backup-site.sh', 'scripts/backup-site.sh'], ['deploy/restore-site.sh', 'scripts/restore-site.sh']
 ];
 for (const [from, to] of copies) fs.writeFileSync(path.join(server, to), fs.readFileSync(path.join(root, from), 'utf8').replaceAll('\r\n', '\n'));

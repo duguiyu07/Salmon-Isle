@@ -1,11 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {AsyncLocalStorage} from 'node:async_hooks';
-import {workspaceRoot} from './library-context';
+import {runtimeDir,workspaceRoot} from './library-context';
 import {AppError} from './model';
 const locks=new AsyncLocalStorage<string>();
 export async function withRepositoryLock<T>(callback:()=>Promise<T>|T,root=workspaceRoot()):Promise<T>{
-  const file=path.resolve(root)+'.salmon-lock';if(locks.getStore()===file)return callback();
+  const directory=path.resolve(root);
+  // The runtime can be a mount such as /data, whose parent is not writable.
+  // Repository locks stay beside workspaces so initialization and renames work.
+  const file=directory===runtimeDir()?path.join(directory,'runtime.salmon-lock'):directory+'.salmon-lock';if(locks.getStore()===file)return callback();
   fs.mkdirSync(path.dirname(file),{recursive:true});const until=Date.now()+30000;
   for(;;){
     try{const fd=fs.openSync(file,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,time:Date.now()}));fs.closeSync(fd);break;}

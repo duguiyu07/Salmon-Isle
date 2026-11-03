@@ -9,7 +9,7 @@ export function ProgramUpdates({desktop}:{desktop:boolean}){
   const [native,setNative]=useState<DesktopUpdateStatus|null>(null),[server,setServer]=useState<ServerStatus|null>(null),[source,setSource]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(()=>{
     if(desktop){let active=true;const refresh=()=>{void window.salmonDesktop?.updateStatus().then(value=>{if(active){setNative(value);setSource(previous=>previous||value.feedUrl);}});};refresh();const timer=setInterval(refresh,1200);
-      void contentApi<{siteUrl?:string}>('admin/git/status').then(async status=>{if(!status.siteUrl)return;const response=await fetch(new URL('/api/program-info',status.siteUrl));if(response.ok){const info=await response.json();if(active&&typeof info.desktopFeed==='string')setSource(previous=>previous||info.desktopFeed);}}).catch(()=>{});
+      void contentApi<{siteUrl?:string}>('admin/sync/connection').then(async status=>{if(!status.siteUrl)return;const response=await fetch(new URL('/api/program-info',status.siteUrl));if(response.ok){const info=await response.json();if(active&&typeof info.desktopFeed==='string')setSource(previous=>previous||info.desktopFeed);}}).catch(()=>{});
       return()=>{active=false;clearInterval(timer);};
     }
     void contentApi<ServerStatus>('admin/program-updates').then(value=>{setServer(value);setSource(value.manifestUrl);}).catch(error=>setError(error.message));
@@ -27,6 +27,7 @@ export function ProgramUpdates({desktop}:{desktop:boolean}){
     </div>
     <p className="small muted">{desktop?'覆盖升级保留连接配置、凭据和本地内容。安装前会保存所有编辑窗口，无需先卸载。':'在服务器运行更新脚本即可更新程序；脚本会先备份数据，保留数据卷，并在启动检查失败时回退镜像。'}</p>
     {!desktop&&<div className="website-update-commands"><h3>更新网站</h3><p>Linux / Docker</p><pre>{'sh scripts/update-site.sh'+(server?.latest?.dockerImage?' --image '+server.latest.dockerImage:'')}</pre><p>Windows / Docker</p><pre>{'powershell -ExecutionPolicy Bypass -File scripts/update-site.ps1'+(server?.latest?.dockerImage?' -Image '+server.latest.dockerImage:'')}</pre>{server?.latest?.dockerImage&&<p className="small muted">最新镜像：<code>{server.latest.dockerImage}</code></p>}</div>}
+    {desktop&&<p><a className="text-button" href="https://github.com/duguiyu07/Salmon-Isle/releases/latest" target="_blank" rel="noreferrer">手动下载安装包覆盖升级 ↗</a><span className="small muted"> 无需卸载，保留本地内容。</span></p>}
     <details className="connection-advanced"><summary>更新源</summary><div><label>{desktop?'桌面程序更新目录':'网站版本信息地址'}<input type="url" value={source} disabled={working} onChange={event=>setSource(event.target.value)} placeholder={desktop?'https://github.com/owner/source/releases/latest/download/':'https://github.com/owner/source/releases/latest/download/release.json'}/></label><p className="small muted">使用软件源码项目的发布地址，内容仓库不用于发布程序安装包。</p></div></details>
   </section>;
 }

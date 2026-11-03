@@ -1,14 +1,14 @@
 {
   "name": "salmon-isle-writer",
   "productName": "Salmon Isle Writer",
-  "version": "1.1.4",
+  "version": "2.0.0",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/duguiyu07/Salmon-Isle.git"
   },
   "private": true,
-  "description": "Salmon Isle offline writing and Git content management",
+  "description": "Salmon Isle offline writing and direct website synchronization",
   "author": "Salmon Isle contributors",
   "main": "main.cjs",
   "scripts": {
@@ -21,7 +21,6 @@
     "smoke": "electron . --smoke"
   },
   "dependencies": {
-    "dugite": "3.3.2",
     "electron-updater": "6.8.12",
     "yaml": "^2.8.1"
   },
@@ -46,8 +45,7 @@
       "update-defaults.json"
     ],
     "asarUnpack": [
-      "web/**/*",
-      "node_modules/dugite/**/*"
+      "web/**/*"
     ],
     "win": {
       "target": [

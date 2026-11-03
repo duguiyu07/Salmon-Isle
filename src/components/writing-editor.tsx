@@ -2,9 +2,9 @@
 import {forwardRef,useEffect,useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {EditorView,type ViewUpdate} from '@codemirror/view';
-import {Plus,Bold,Italic,Strikethrough,List,ListOrdered,Link as LinkIcon,Undo2,Redo2,X,Trash2,ImagePlus,ChevronRight} from 'lucide-react';
+import {Layers,ArrowUp,ArrowDown,Plus,Bold,Italic,Strikethrough,List,ListOrdered,Link as LinkIcon,Undo2,Redo2,X,Trash2,ImagePlus,ChevronRight} from 'lucide-react';
 import {styleFields,validStyle,updateGroupAttributes} from '@/lib/styles';
-import {blockAtLine} from '@/lib/editor-block';
+import {sourceBlockMove,blockAtLine} from '@/lib/editor-block';
 import {serializeCodeMeta} from '@/lib/code-block';
 import {codeLanguage} from '@/lib/code-languages';
 import {linkedImageSourceMarkdown} from '@/lib/image-caption';
@@ -24,9 +24,11 @@ interface Props{
   onChange:(patch:Partial<WritingDocument>)=>void;onUpload:(file:File)=>void;onChooseMedia?:()=>void;onError:(message:string)=>void;onBlockAvailabilityChange:(available:boolean)=>void;
 }
 export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEditor({doc,mode,onModeChange,preview,onChange,onUpload,onChooseMedia,onError,onBlockAvailabilityChange},ref){
+  const [docked,setDocked]=useState(false);const dock=useRef<HTMLDivElement>(null);
   const [cursor,setCursor]=useState(1),[block,setBlock]=useState<VisualBlock|null>(null),[settingsOpen,setSettingsOpen]=useState(false);
   const [blank,setBlank]=useState<EditorAnchor|null>(null),[insertAnchor,setInsertAnchor]=useState<EditorAnchor|null>(null),[position,setPosition]=useState<{top:number;left:number}|null>(null);
   const visual=useRef<VisualEditorHandle>(null),code=useRef<EditorView|null>(null),modeRef=useRef(mode);modeRef.current=mode;
+  const editorArea=useRef<HTMLDivElement>(null);
   const floating=useRef<HTMLDivElement>(null),insertion=useRef<HTMLDivElement>(null),toolbar=useRef<HTMLDivElement>(null),linkDialog=useRef<HTMLDialogElement>(null);
   const codeBookmark=useRef<{from:number;to:number}|null>(null),openTarget=useRef(''),current=useRef({block,mode,settingsOpen,insertAnchor});current.current={block,mode,settingsOpen,insertAnchor};
   const sourceBlock=mode==='code'?blockAtLine(doc.body,cursor):null,selected=mode==='code'?sourceBlock:block;
@@ -68,6 +70,7 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
     document.addEventListener('pointerdown',outside,true);window.addEventListener('keydown',escape);window.addEventListener('scroll',scroll,true);
     return()=>{document.removeEventListener('pointerdown',outside,true);window.removeEventListener('keydown',escape);window.removeEventListener('scroll',scroll,true);};
   },[]);
+  useEffect(()=>setDocked(false),[blockKey,visible]);
   useLayoutEffect(()=>{
     if(!visible){setPosition(null);return;}
     const measure=()=>{
@@ -78,16 +81,18 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
       const minTop=Math.max(16,(toolbar.current?.getBoundingClientRect().bottom||0)+12);
       if(rect.bottom<minTop||rect.top>window.innerHeight-12){setPosition(null);return;}
       const more=Math.max(0,...Array.from(root.querySelectorAll<HTMLElement>('.block-more[open]>.block-more-content,.block-parent-menu[open]>div')).map(element=>element.offsetHeight+8));
+      const bounds=editorArea.current?.getBoundingClientRect();const left=Math.max(12,bounds?.left||rect.left),right=Math.min(window.innerWidth-12,bounds?.right||window.innerWidth-12);root.style.width=Math.max(180,right-left)+'px';
       const height=root.offsetHeight+more,width=root.offsetWidth,above=rect.top-minTop-16,below=window.innerHeight-rect.bottom-28;
+      if(!docked&&above<height&&below<height){setDocked(true);setPosition({top:0,left});return;}
       const top=above>=height||above>=below?Math.max(minTop,rect.top-height-16):Math.min(rect.bottom+16,window.innerHeight-height-12);
       root.style.setProperty('--block-menu-max-height',`${Math.max(100,Math.max(above,below)-root.offsetHeight-8)}px`);
-      setPosition({top:Math.max(minTop,top),left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12))});
+      setPosition({top:Math.max(minTop,top),left});
     };
     measure();const observer=new ResizeObserver(measure),root=floating.current!;
     observer.observe(root);root.querySelectorAll('.block-more-content').forEach(element=>observer.observe(element));
     root.addEventListener('toggle',measure,true);window.addEventListener('resize',measure);window.addEventListener('scroll',measure,true);
     return()=>{observer.disconnect();root.removeEventListener('toggle',measure,true);window.removeEventListener('resize',measure);window.removeEventListener('scroll',measure,true);};
-  },[visible,block,sourceBlock?.index,mode]);
+  },[visible,block,sourceBlock?.index,mode,docked]);
   function update(key:string,value:string){
     if(!selected)return;
     if(styleFields.includes(key as typeof styleFields[number])&&value&&!validStyle(key,value)){onError('样式值无效，请使用颜色值或 px / rem / em 等尺寸');return;}
@@ -105,6 +110,8 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
     const replacement=sourceBlock.name==='code'?`${sourceBlock.fence}${attrs.language||'text'} ${serializeCodeMeta({lineNumbers:attrs.lineNumbers!=='false',start:Math.max(1,Number(attrs.start)||1),highlight:attrs.highlight||'',blur:attrs.blur||''})}`.trimEnd():`${sourceBlock.fence}${sourceBlock.name}{${Object.entries(attrs).map(([name,entry])=>`${name}=${JSON.stringify(entry)}`).join(' ')}}`;
     const line=view.state.doc.line(sourceBlock.index+1);view.dispatch({changes:{from:line.from,to:line.to,insert:replacement}});
   }
+  const canMove=(direction:-1|1)=>mode==='code'?!!sourceBlock&&!!sourceBlockMove(doc.body,sourceBlock,direction):!!visual.current?.canMove(direction);
+  const move=(direction:-1|1)=>{flush();if(mode==='code'&&code.current&&sourceBlock){const edit=sourceBlockMove(doc.body,sourceBlock,direction);if(edit){code.current.dispatch({changes:{from:edit.from,to:edit.to,insert:edit.insert},selection:{anchor:edit.anchor},scrollIntoView:true});code.current.focus();}}else visual.current?.moveBlock(direction);};
   const format=(name:string,value?:string)=>visual.current?.format(name,value);
   const keepSelection=(event:React.MouseEvent)=>{if((event.target as HTMLElement).closest('button')){flush();event.preventDefault();}};
   const anchor=insertAnchor||blank;
@@ -118,12 +125,13 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
       {mode!=='preview'&&<div className="writing-format-actions">
         {mode==='visual'&&<><select aria-label="段落样式" defaultValue="0" onChange={event=>{format('heading',event.target.value);event.target.value='0';}}><option value="0">正文</option>{[1,2,3,4,5,6].map(level=><option key={level} value={level}>标题 {level}</option>)}</select>
         {([['strong','加粗',Bold],['emphasis','斜体',Italic],['strike_through','删除线',Strikethrough],['bullet','无序列表',List],['ordered','有序列表',ListOrdered],['undo','撤销',Undo2],['redo','重做',Redo2]] as const).map(([name,label,Icon])=><button key={name} type="button" title={label} aria-label={label} onClick={()=>format(name)}><Icon size={16}/></button>)}
+        <button type="button" aria-label="快捷组合" title="将完整段落加入内容组" onClick={()=>visual.current?.groupSelection()}><Layers size={16}/></button><button type="button" aria-label="上移当前段落" title="上移完整段落或列表项" onClick={()=>visual.current?.moveBlock(-1)}><ArrowUp size={16}/></button><button type="button" aria-label="下移当前段落" title="下移完整段落或列表项" onClick={()=>visual.current?.moveBlock(1)}><ArrowDown size={16}/></button><button type="button" aria-label="删除当前段落" title="删除完整段落或列表项（可撤销）" onClick={()=>visual.current?.deleteSelectionBlocks()}><Trash2 size={16}/></button>
         <button type="button" aria-label="插入链接" title="插入链接" onClick={()=>linkDialog.current?.showModal()}><LinkIcon size={16}/></button></>}
         {onChooseMedia&&<button type="button" aria-label="插入图片" title="插入图片" onClick={()=>{rememberSelection();onChooseMedia();}}><ImagePlus size={16}/></button>}
       </div>}
       <div className="writing-view-modes" role="group" aria-label="编辑模式">{([['visual','可视化'],['code','源码'],['preview','预览']] as const).map(([value,label])=><button type="button" key={value} aria-pressed={mode===value} className={mode===value?'active':''} onClick={()=>onModeChange(value)}>{label}</button>)}</div>
     </div>
-    <div className="editor-layout writing-layout"><div className="editor-text-area">
+    <div ref={dock} className="editor-panel-dock" style={{top:(toolbar.current?.getBoundingClientRect().bottom||64)+8}}/><div className="editor-layout writing-layout"><div className="editor-text-area" ref={editorArea}>
       <div hidden={mode!=='visual'}><VisualEditor ref={visual} value={doc.body} onChange={body=>onChange({body})} onSelect={(value,open)=>{
         if(modeRef.current!=='visual')return;setBlock(value);
         const key=value?`${value.name}-${value.position}`:'';
@@ -140,18 +148,20 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
     }}>
       <button type="button" className="writing-inline-plus" aria-label="插入区块" title="插入区块" aria-expanded={!!insertAnchor} onClick={event=>{flush();setSettingsOpen(false);rememberSelection();setInsertAnchor(value=>value?null:anchor);if(event.detail===0)requestAnimationFrame(()=>insertion.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus());}}><Plus size={19}/></button>
       {insertAnchor&&<InsertionOptions onInsert={insertBlock} onUploadStart={rememberSelection} onChooseMedia={onChooseMedia?()=>{setInsertAnchor(null);onChooseMedia();}:undefined} onUpload={file=>{setInsertAnchor(null);onUpload(file);}}/>}
-    </div>,document.body)}
-    {visible&&selected&&createPortal(<div ref={floating} className="block-controls floating-block-controls" role="toolbar" aria-label="区块设置" style={position?{...position,visibility:'visible'}:{top:0,left:12,visibility:'hidden'}} onMouseDown={keepSelection}>
+    </div>,document.fullscreenElement||document.body)}
+    {visible&&selected&&createPortal(<div ref={floating} className={'block-controls floating-block-controls'+(docked?' is-docked':'')} role="toolbar" aria-label="区块设置" style={position?{...position,visibility:'visible'}:{top:0,left:12,visibility:'hidden'}} onMouseDown={keepSelection}>
       {mode==='visual'&&block&&block.parents.length>0&&<details className="block-parent-menu"><summary title="选择父级区块" aria-label="选择父级区块"><ChevronRight size={14}/></summary><div>{block.parents.map(parent=><button type="button" key={parent.position} onClick={()=>{openTarget.current=`${parent.name}-${parent.position}`;visual.current?.selectBlock(parent.position);setSettingsOpen(true);}}>选择{blockNames[parent.name]||'父级区块'}</button>)}</div></details>}
       <BlockControls key={blockKey} block={selected} blockKey={blockKey} source={mode==='code'} update={update} format={format}/>
       <div className="block-control-actions">
+        <button type="button" className="icon-button" aria-label="上移区块" title="上移区块" disabled={!canMove(-1)} onClick={()=>move(-1)}><ArrowUp size={16}/></button>
+        <button type="button" className="icon-button" aria-label="下移区块" title="下移区块" disabled={!canMove(1)} onClick={()=>move(1)}><ArrowDown size={16}/></button>
         <button type="button" className="delete-block-button icon-button" title={`删除${blockNames[selected.name]||'区块'}（可撤销）`} aria-label={`删除${blockNames[selected.name]||'区块'}`} disabled={mode==='code'&&sourceBlock?.from===undefined} onClick={()=>{
           if(mode==='code'&&code.current&&sourceBlock?.from!==undefined)code.current.dispatch({changes:{from:sourceBlock.from,to:sourceBlock.to,insert:''}});
           else visual.current?.deleteBlock();setSettingsOpen(false);
-        }}><Trash2 size={15}/></button>
-        <button type="button" className="icon-button close-block-controls" aria-label="关闭区块设置" onClick={()=>{flush();setSettingsOpen(false);}}><X size={15}/></button>
+        }}><Trash2 size={16}/></button>
+        <button type="button" className="icon-button close-block-controls" aria-label="关闭区块设置" onClick={()=>{flush();setSettingsOpen(false);}}><X size={16}/></button>
       </div>
-    </div>,document.body)}
+    </div>,docked&&dock.current?dock.current:document.fullscreenElement||document.body)}
     <dialog ref={linkDialog} className="link-dialog"><form onSubmit={event=>{event.preventDefault();format('link',String(new FormData(event.currentTarget).get('href')));linkDialog.current?.close();}}><label>链接地址<input name="href" placeholder="https://" required autoFocus/></label><div className="admin-actions"><button type="button" className="button secondary" onClick={()=>linkDialog.current?.close()}>取消</button><button className="button primary">插入链接</button></div></form></dialog>
   </>;
 });

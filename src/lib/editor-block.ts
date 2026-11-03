@@ -28,3 +28,11 @@ export function sourceInsertionLine(body:string,line:number){
   if((body.split('\n')[line-1]??'x').trim())return false;
   let allowed=true;visit(parser.parse(body),(node:any)=>{if(node.position?.start.line<=line&&node.position.end.line>=line&&['code','math','table','html'].includes(node.type))allowed=false;});return allowed;
 }
+export function sourceBlockMove(body:string,block:SelectedBlock,direction:-1|1){
+ if(block.from===undefined||block.to===undefined)return null;const tree=parser.runSync(parser.parse(body),{value:body});let target:any=null,parent:any=null;
+ visit(tree,(node:any,_index:any,owner:any)=>{if(!owner?.children||!node.position||!['paragraph','heading','listItem','code','math','table','containerDirective'].includes(node.type))return;const from=node.position.start.offset,to=node.position.end.offset;if(from<=block.from!&&to>=block.to!&&(!target||to-from<target.position.end.offset-target.position.start.offset)){target=node;parent=owner;}});
+ if(!target||!parent)return null;const index=parent.children.indexOf(target),other=parent.children[index+direction];if(!other?.position)return null;
+ const a=target.position.start.offset,b=target.position.end.offset,c=other.position.start.offset,d=other.position.end.offset;
+ if(direction<0)return {from:c,to:b,insert:body.slice(a,b)+body.slice(d,a)+body.slice(c,d),anchor:c};
+ return {from:a,to:d,insert:body.slice(c,d)+body.slice(b,c)+body.slice(a,b),anchor:a+(d-c)+(c-b)};
+}

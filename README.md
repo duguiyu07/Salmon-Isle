@@ -2,9 +2,9 @@
 
 许可协议：GPL-3.0-only
 
-源码与更新来自 <https://github.com/duguiyu07/Salmon-Isle>。当前待发布版本为 **1.1.4**；本次 Electron 运行文件安装修复及重新发布步骤见 [发布修复指南](docs/release-fix-1.1.4.zh-CN.md)，服务器上线步骤见 [部署操作指南](docs/deployment-guide.zh-CN.md)。
+当前版本为 **2.0.0**。客户端下载、服务器程序和更新来自 <https://github.com/duguiyu07/Salmon-Isle>。
 
-
+2.0 使用客户端与服务器直接通信，草稿自动同步，发布由服务器确认，支持离线写作。升级请阅读 [2.0 升级指南](docs/upgrade-2.0.zh-CN.md)，先升级网站，再覆盖安装客户端；旧数据和未同步内容会保留用于恢复。
 
 ## 本地启动
 

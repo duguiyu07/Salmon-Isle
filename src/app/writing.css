@@ -240,6 +240,33 @@
 .live-html-u{text-decoration:underline}.live-html-sup{vertical-align:super;font-size:.8em}.live-html-sub{vertical-align:sub;font-size:.8em}
 .live-spoiler{background:var(--ink);color:var(--paper);border-radius:2px}
 .live-math-preview{display:inline;cursor:text}.live-math-preview .katex{font-size:1.1em}
+
+/* Shared geometry for selection tools and block settings. */
+.selection-toolbar{align-items:center;gap:2px;padding:4px;z-index:75;max-width:calc(100vw - 24px)}
+.selection-toolbar button,.floating-block-controls .block-control-actions>button{display:grid;place-items:center;flex:0 0 32px;width:32px;min-width:32px;height:32px;min-height:32px;padding:0;line-height:1;border-radius:3px}
+.selection-toolbar svg,.floating-block-controls svg{width:16px;height:16px;stroke-width:2}
+.selection-toolbar button:disabled,.floating-block-controls button:disabled{opacity:.35;cursor:default}
+.toolbar-separator{height:20px;width:1px;background:var(--line);margin:0 3px}
+.floating-block-controls{min-height:48px;max-width:calc(100vw - 24px);padding:7px 8px;gap:6px 10px;align-items:center}
+.floating-block-controls .block-control-actions{margin-left:auto;gap:2px;flex:0 0 auto}
+.floating-block-controls>label{flex:1 1 160px;min-width:0}
+.floating-block-controls>label.inline-check{flex:0 0 auto}
+.floating-block-controls label>input:not([type=checkbox]),.floating-block-controls label>textarea{flex:1 1 auto;width:0;min-width:60px;max-width:100%}
+.floating-block-controls .block-formula{display:flex;flex:1 1 220px;align-items:center;min-width:0}
+.floating-block-controls .block-more-content{left:0;right:0;width:100%;box-sizing:border-box}
+.floating-block-controls .block-more-content label{min-width:0}
+.floating-block-controls .block-more-content label>input{width:0;min-width:40px}
+.auto-grow-textarea{box-sizing:border-box;min-height:32px;height:32px;resize:none;overflow:hidden;font:inherit;line-height:1.5;padding:5px 7px}
+.visual-document p:has(>.visual-image:only-child),.visual-document p:has(>a:only-child>.visual-image:only-child){text-align:center}
+.visual-document p:has(>.visual-image[data-standalone=true]),.visual-document p:has(>a>.visual-image[data-standalone=true]){text-align:center}
+.visual-image{max-width:100%;text-align:center}
+.image-caption-editor{display:block;width:100%;min-width:140px;max-width:100%;font:13px/1.6 var(--editor-font);text-align:center;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:3px;margin-top:10px}
+.image-caption-editor[hidden]{display:none}
+.content-image-caption[role=button]{cursor:text;outline-offset:3px;min-height:22px}
+.sync-panel{max-width:820px;margin:auto}.sync-panel>p{margin:16px 0}.sync-connect-form{display:grid;gap:16px;max-width:540px;margin-top:24px}.sync-connect-form>label{display:grid;gap:6px}.sync-connect-form>.inline-check{display:flex;align-items:center}.sync-connect-form>.button{justify-self:start}
+.readonly-media{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;margin-top:24px}.readonly-media>a{display:grid;gap:8px;overflow-wrap:anywhere}.readonly-media img{width:100%;height:120px;object-fit:contain}
+.editor-panel-dock{position:sticky;z-index:70;width:100%}.editor-panel-dock:has(>.block-controls){margin-bottom:12px}.floating-block-controls.is-docked{position:relative;top:auto!important;left:auto!important;width:100%!important;max-width:none;visibility:visible!important}
+@media(max-width:600px){.floating-block-controls>label{flex-basis:100%}.floating-block-controls .block-control-actions{margin-left:auto}.selection-toolbar{gap:0}.selection-toolbar button{flex-basis:30px;width:30px;min-width:30px}.floating-block-controls .block-more-content{grid-template-columns:1fr}}
 .live-rule-preview{display:block;border-top:1px solid var(--line);min-height:18px;margin-top:24px;cursor:text}
 .visual-document p[data-live-rule]{min-height:30px}
 .visual-tab-buttons{border:0;background:var(--subtle);border-radius:4px;margin:6px 10px;padding:4px;gap:3px;width:max-content;max-width:calc(100% - 20px)}

@@ -49,6 +49,15 @@ try {
     & docker compose up -d --no-deps --wait --wait-timeout 120 blog
     if($LASTEXITCODE -ne 0){throw '新版本启动检查未通过'}
   } catch {
+    & docker compose stop blog
+    $dataPath=[IO.Path]::GetFullPath((Join-Path $project 'data'))
+    $failedData=[IO.Path]::GetFullPath((Join-Path $backup 'failed-data'))
+    if($dataPath -ne (Join-Path $project 'data') -or -not $failedData.StartsWith($backup+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe rollback paths'}
+    if(Test-Path -LiteralPath (Join-Path $backup 'data')){
+      if(Test-Path -LiteralPath $dataPath){Move-Item -LiteralPath $dataPath -Destination $failedData}
+      Copy-Item -LiteralPath (Join-Path $backup 'data') -Destination $dataPath -Recurse
+      '{"restored":true}' | Set-Content -LiteralPath (Join-Path $dataPath 'sync-restored.json') -Encoding utf8
+    }
     if($Image){
       $previousEnv=Join-Path $backup 'previous.env'
       if(Test-Path -LiteralPath $previousEnv){Copy-Item -LiteralPath $previousEnv -Destination (Join-Path $project '.env') -Force}

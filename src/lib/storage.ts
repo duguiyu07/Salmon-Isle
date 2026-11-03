@@ -6,9 +6,13 @@ import { Article, ArticleMeta, Folder, SiteSettings, defaultSettings, AppError, 
 import { contentPath, dataDir, initDirs, relativePath, safeName, within } from './paths';
 import { digest, hashPassword } from './crypto';
 import { audit, indexDb } from './db';
-import {libraryPath,assertLibraryWritable,isDesktop,withPublicLibrary} from './library-context';
+import {libraryPath,libraryRoot,assertLibraryWritable,isDesktop,withPublicLibrary,directLibraryRoot} from './library-context';
 import {normalizePageRoute} from './page-routes';
 import postcss from 'postcss';
+const registry=globalThis as typeof globalThis&{salmonLibraryCaches?:{folders:Map<string,Folder[]>;articles:Map<string,Map<string,string>>}};
+registry.salmonLibraryCaches??={folders:new Map(),articles:new Map()};
+const folderCache=registry.salmonLibraryCaches.folders,articlePaths=registry.salmonLibraryCaches.articles;
+export function invalidateLibraryCache(){folderCache.clear();articlePaths.clear();}
 
 export function atomicWrite(file: string, text: string | Buffer) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -52,6 +56,7 @@ function walk(dir: string, fn: (full: string) => void) {
   }
 }
 export function listFolders(): Folder[] {
+  const cached=folderCache.get(libraryRoot());if(cached)return cached;
   const root: Folder = { id: 'root', name: '所有文章', path: '', parentId: '', order: 0, access: 'public' };
   const folders: Folder[] = [root];
   walk(contentPath(), file => {
@@ -73,7 +78,7 @@ export function listFolders(): Folder[] {
     const parentPath = path.posix.dirname(folder.path);
     folder.parentId = folders.find(f => f.path === (parentPath === '.' ? '' : parentPath))?.id || 'root';
   }
-  return folders.sort((a,b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'));
+  const result=folders.sort((a,b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'));folderCache.set(libraryRoot(),result);return result;
 }
 export function listArticles(): Article[] {
   const folders = listFolders(); const articles: Article[] = [];
@@ -85,9 +90,9 @@ export function listArticles(): Article[] {
     if (articles.some(a => a.id === normalized.id)) throw new AppError(`重复文章 ID：${normalized.id}`);
     articles.push({ ...normalized, body, path: p, folderId: folders.find(f => f.path === (dir === '.' ? '' : dir))?.id || 'root', version: digest(raw) });
   });
-  return articles.sort((a,b) => a.order-b.order || b.createdAt.localeCompare(a.createdAt));
+  articlePaths.set(libraryRoot(),new Map(articles.map(article=>[article.id,article.path])));return articles.sort((a,b) => a.order-b.order || b.createdAt.localeCompare(a.createdAt));
 }
-export function findArticle(id: string) { return listArticles().find(a => a.id === id); }
+export function findArticle(id: string) {const paths=articlePaths.get(libraryRoot());if(!paths)return listArticles().find(a=>a.id===id);const p=paths.get(id);if(!p)return undefined;const file=contentPath(p);if(!fs.existsSync(file)){articlePaths.delete(libraryRoot());return listArticles().find(a=>a.id===id);}const raw=fs.readFileSync(file,'utf8'),{meta,body}=splitMarkdown(raw),dir=path.posix.dirname(p);return {...normalizeMeta(meta),body,path:p,folderId:listFolders().find(folder=>folder.path===(dir==='.'?'':dir))?.id||'root',version:digest(raw)};}
 export function articleMeta(article: Article): ArticleMeta {
   const { body: _body, path: _path, folderId: _folder, version: _version, ...meta } = article; return meta;
 }
@@ -115,9 +120,10 @@ export function saveArticle(input: Partial<ArticleMeta> & { body: string; folder
     else if(meta.status==='published')throw new AppError('发布前请填写页面地址');
   }
   const target = contentPath(path.posix.join(folder.path, `${safeName(input.filename || meta.title)}--${meta.id}.md`));
-  if (existing) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
+  if (existing&&!directLibraryRoot()) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
   atomicWrite(target, markdownFile(meta, input.body));
   if (existing && contentPath(existing.path) !== target) fs.unlinkSync(contentPath(existing.path));
+  articlePaths.get(libraryRoot())?.set(meta.id,relativePath(target));
   indexArticle(meta.id, meta.title, input.body, relativePath(target)); audit(existing ? 'article.update' : 'article.create', meta.id);
   return findArticle(meta.id)!;
 }
@@ -126,14 +132,15 @@ export function writeImportedArticle(meta: ArticleMeta, body: string, folderId: 
   const existing = findArticle(meta.id);
   if (existing && !replace) return existing;
   const folder = listFolders().find(f => f.id === folderId); if (!folder) throw new AppError('目标文件夹不存在');
-  if (existing) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
+  if (existing&&!directLibraryRoot()) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
   const target = contentPath(path.posix.join(folder.path, `${safeName(meta.title)}--${meta.id}.md`));
   atomicWrite(target, markdownFile(meta, body));
   if (existing && contentPath(existing.path) !== target) fs.unlinkSync(contentPath(existing.path));
-  indexArticle(meta.id, meta.title, body, relativePath(target)); return findArticle(meta.id)!;
+  articlePaths.get(libraryRoot())?.set(meta.id,relativePath(target));indexArticle(meta.id, meta.title, body, relativePath(target)); return findArticle(meta.id)!;
 }
 function indexArticle(id: string, title: string, body: string, p: string) { indexDb().prepare('INSERT OR REPLACE INTO articles VALUES(?,?,?,?)').run(id,title,body,p); }
 export function reindex() {
+  invalidateLibraryCache();
   const articles = listArticles(); indexDb().exec('DELETE FROM articles');
   for (const a of articles) indexArticle(a.id,a.title,a.body,a.path); return articles.length;
 }
@@ -142,11 +149,11 @@ export function searchIndex(query:string){
   const q=query.trim().toLowerCase().slice(0,200);
   return new Set((indexDb().prepare('SELECT id FROM articles WHERE instr(lower(title),?)>0 OR instr(lower(body),?)>0').all(q,q) as {id:string}[]).map(r=>r.id));
 }
-export function saveFolder(input: Partial<Folder> & { password?: string }) {
+export function saveFolder(input: Partial<Folder> & { password?: string },options:{create?:boolean;policy?:Policy}={}) {
   assertLibraryWritable();
   const folders = listFolders(); const current = folders.find(f => f.id === input.id);
   if (input.id === 'root') throw new AppError('根目录不能修改');
-  if (input.id && !current) throw new AppError('文件夹不存在', 404);
+  if (input.id && !current&&!options.create) throw new AppError('文件夹不存在', 404);
   const parent = folders.find(f => f.id === (input.parentId || current?.parentId || 'root'));
   if (!parent) throw new AppError('上级文件夹不存在');
   if (!input.name?.trim()) throw new AppError('请输入文件夹名称');
@@ -154,7 +161,7 @@ export function saveFolder(input: Partial<Folder> & { password?: string }) {
   const target = contentPath(path.posix.join(parent.path, safeName(input.name)));
   const oldPath = current ? contentPath(current.path) : null;
   if (target !== oldPath && fs.existsSync(target)) throw new AppError('已存在同名文件夹');
-  const folder = { id: current?.id || randomUUID(), name: input.name.trim(), order: Number(input.order ?? current?.order) || 0, ...(input.aliases||current?.aliases?{aliases:input.aliases||current?.aliases}:{}), ...applyPolicy(input, current || { access: 'inherit' }) };
+  const folder = { id: current?.id || input.id || randomUUID(), name: input.name.trim(), order: Number(input.order ?? current?.order) || 0, ...(input.aliases||current?.aliases?{aliases:input.aliases||current?.aliases}:{}), ...(options.policy||applyPolicy(input, current || { access: 'inherit' })) };
   if (oldPath && oldPath !== target) fs.renameSync(oldPath,target);
   atomicWrite(path.join(target, '.folder.yml'), YAML.stringify(folder)); reindex(); audit(current ? 'folder.update' : 'folder.create',folder.id);
   return listFolders().find(f => f.id === folder.id)!;

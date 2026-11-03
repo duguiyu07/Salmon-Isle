@@ -126,13 +126,8 @@ export function visualNodeViews(){return [
   ...mathNodes.map((schema,i)=>$view(schema,()=> (initial,view,getPos)=>{
     let node=initial;const block=i===1;const dom=document.createElement(block?'div':'span');dom.className=`visual-math ${block?'visual-math-block':''}`;dom.contentEditable='false';
     const preview=document.createElement('button');preview.type='button';preview.className='visual-math-preview';preview.setAttribute('aria-label','编辑公式');
-    const popup=document.createElement('span');popup.className='visual-math-popup';popup.hidden=true;
-    const input=document.createElement('textarea');input.setAttribute('aria-label','LaTeX 公式');input.rows=3;
-    const done=document.createElement('button');done.type='button';done.textContent='完成';done.addEventListener('click',()=>{popup.hidden=true;view.focus();});
-    popup.append(input,done);dom.append(preview,popup);
-    preview.addEventListener('click',()=>{select(view,getPos);popup.hidden=!popup.hidden;if(!popup.hidden){input.value=node.attrs.value;input.focus();}});
-    input.addEventListener('input',()=>setAttrs(view,getPos,{value:input.value}));
-    const draw=()=>{preview.innerHTML=katex.renderToString(node.attrs.value||'\\square',{displayMode:block,throwOnError:false,trust:false,strict:false});if(document.activeElement!==input)input.value=node.attrs.value;};draw();
+    dom.append(preview);preview.addEventListener('click',()=>select(view,getPos));
+    const draw=()=>{preview.innerHTML=katex.renderToString(node.attrs.value||'\\square',{displayMode:block,throwOnError:false,trust:false,strict:false});};draw();
     return {dom,update(next){if(next.type!==node.type)return false;node=next;draw();return true;},stopEvent:()=>true,ignoreMutation:()=>true,selectNode(){dom.classList.add('ProseMirror-selectednode');},deselectNode(){dom.classList.remove('ProseMirror-selectednode');}};
   })),
   $view(htmlBlockNode,()=>sourceBlockView(true)),

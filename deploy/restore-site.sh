@@ -25,6 +25,7 @@ chown -R 1000:1000 "$backup/extracted/data"
 docker compose stop blog
 mv data "$backup/previous-data"
 mv "$backup/extracted/data" data
+printf '%s\n' '{"restored":true}' > data/sync-restored.json
 if ! docker compose up -d --no-deps --wait --wait-timeout 120 blog; then
     docker compose stop blog
     mv data "$backup/failed-data"

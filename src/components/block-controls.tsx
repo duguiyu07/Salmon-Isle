@@ -2,6 +2,7 @@
 import { presetLabels,selectedPreset,groupBasePreset,presets,type StyleField } from '@/lib/styles';
 import { LanguageSelect } from './code-language-select';
 import {SlidersHorizontal} from 'lucide-react';
+import {AutoGrowTextarea} from './auto-grow-textarea';
 
 export const blockNames:Record<string,string>={group:'内容组',details:'折叠',tabs:'标签页',tab:'标签',columns:'分栏',column:'列',gallery:'图库',figure:'图片说明',image:'图片',code:'代码',math:'公式',inline_math:'行内公式',table:'表格',html:'自定义 HTML',raw_block:'源码区块'};
 interface Block {name:string;attrs:Record<string,string>;tab?:{index:number;count:number}}
@@ -18,10 +19,10 @@ export function BlockControls({block,blockKey,source=false,update,format}:{block
       <p className="small muted">按显示行号填写。模糊仅影响阅读显示，复制包含完整代码。</p>
     </div></details>
   </>;
-  if(name==='math'||name==='inline_math')return <label className="block-formula">LaTeX<textarea rows={2} value={attrs.value||''} onChange={e=>update('value',e.target.value)}/></label>;
+  if(name==='math'||name==='inline_math')return <label className="block-formula">LaTeX<AutoGrowTextarea aria-label="LaTeX 公式" value={attrs.value||''} onChange={e=>update('value',e.target.value)}/></label>;
   if(name==='html'||name==='raw_block')return <span className="small muted">{source?'直接在正文源码中编辑。':'在区块内编辑源码并预览效果。'}</span>;
   if(name==='table')return <div className="table-edit-actions">{[['addRow','添加行'],['addColumn','添加列'],['deleteRow','删除行'],['deleteColumn','删除列']].map(([action,label])=><button type="button" className="button secondary" key={action} onClick={()=>format(action)}>{label}</button>)}</div>;
-  if(name==='image')return <>{field('alt','替代文本')}<label className="image-caption-field">说明<textarea key={blockKey+'-caption'} aria-label="图片说明" rows={2} value={attrs.caption||''} placeholder="支持 Markdown" onChange={event=>update('caption',event.target.value)}/></label><details className="block-more"><summary>更多设置</summary><div className="block-more-content">{field('src','图片地址')}{field('title','图片标题')}</div></details></>;
+  if(name==='image')return <><span className="small muted block-control-hint">点击图片下方编辑说明</span><details className="block-more"><summary>更多设置</summary><div className="block-more-content">{field('alt','替代文本')}{field('src','图片地址')}{field('title','图片标题')}</div></details></>;
   return <>
     {name==='group'&&<label>样式预设<select aria-label="样式预设" value={selectedPreset(attrs)} onChange={e=>update('preset',e.target.value)}>{Object.entries(presetLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
     {name==='group'&&groupBasePreset(attrs)==='shortcut'&&field('href','卡片链接','/links 或 https://…')}

@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import {spawn,type ChildProcess} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+import {hashPassword} from '../src/lib/crypto';
+fs.mkdirSync(path.resolve('.qa-artifacts'),{recursive:true});
+const root=fs.mkdtempSync(path.resolve('.qa-artifacts','sync-http-')),password='Salmon-HTTP-2.0-test',desktopToken=randomUUID(),adminCredential=hashPassword(password);
+const children:ChildProcess[]=[],logs:string[]=[];const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+async function port(){return new Promise<number>((resolve,reject)=>{const server=net.createServer();server.on('error',reject);server.listen(0,'127.0.0.1',()=>{const value=(server.address() as net.AddressInfo).port;server.close(()=>resolve(value));});});}
+const serverPort=await port(),clientPort=await port(),serverOrigin='http://127.0.0.1:'+serverPort,clientOrigin='http://127.0.0.1:'+clientPort;
+async function launch(desktop:boolean,secret=''){
+ const selectedPort=desktop?clientPort:serverPort,origin=desktop?clientOrigin:serverOrigin;
+ const standalone=process.argv.includes('--standalone'),args=standalone?[path.resolve('.next/standalone/server.js')]:[path.resolve('node_modules/next/dist/bin/next'),'start','--hostname','127.0.0.1','--port',String(selectedPort)];
+ const inherited={...process.env};for(const key of Object.keys(inherited))if(key.startsWith('SALMON_'))delete inherited[key];
+ const child=spawn(process.execPath,args,{env:{...inherited,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(selectedPort),NEXT_TELEMETRY_DISABLED:'1',SALMON_DATA_DIR:path.join(root,desktop?'client':'server'),SALMON_ORIGIN:origin,SALMON_DESKTOP:desktop?'true':'false',SALMON_ADMIN_HASH:adminCredential,SALMON_ALLOW_HTTP_SYNC:'true',SALMON_DESKTOP_TOKEN:desktopToken,SALMON_SYNC_TOKEN:secret},stdio:['ignore','pipe','pipe'],windowsHide:true});children.push(child);child.stdout?.on('data',value=>logs.push(String(value)));child.stderr?.on('data',value=>logs.push(String(value)));
+ for(let i=0;i<240;i++){try{if((await fetch(origin+'/api/health',{headers:desktop?{'x-salmon-desktop-token':desktopToken}:{},signal:AbortSignal.timeout(1000)})).ok)return child;}catch{}if(child.exitCode!==null)throw new Error('Service exited: '+logs.join(''));await delay(250);}throw new Error('Service startup timed out: '+logs.join(''));
+}
+async function local(route:string,body?:unknown){const response=await fetch(clientOrigin+'/api/'+route,{method:body===undefined?'GET':'POST',headers:{'x-salmon-desktop-token':desktopToken,Origin:clientOrigin,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await response.json();assert.ok(response.ok,route+': '+JSON.stringify(value));return value;}
+async function synced(){for(let i=0;i<160;i++){const status=await local('admin/sync/status');if(status.pending===0&&status.phase==='synced')return;await delay(100);}throw new Error('Sync did not settle: '+JSON.stringify(await local('admin/sync/status'))+'\n'+logs.join(''));}
+async function stop(child:ChildProcess){if(child.exitCode!==null)return;const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await Promise.race([exited,delay(5000)]);}
+try{
+ let cloud=await launch(false),desktop=await launch(true);assert.equal((await fetch(clientOrigin+'/api/health')).status,403);
+ const connection=await local('admin/sync/connect',{siteUrl:serverOrigin,password});const secret=connection.secret;assert.equal(fs.readFileSync(path.join(root,'client/sync-connection.json'),'utf8').includes(secret),false);
+ const id=randomUUID();let saved=await local('admin/editor-drafts',{articleId:id,document:{title:'Direct sync verification',body:'**粗体**是一种结构。',folderId:'root',kind:'post'},baseVersion:null,draftVersion:null});await synced();assert.equal((await fetch(serverOrigin+'/posts/'+id)).status,404);
+ const published=await local('admin/editor-drafts/'+id+'/push',{baseVersion:saved.draft.baseVersion,draftVersion:saved.draft.draftVersion});assert.equal(published.status,'published');assert.match(await(await fetch(serverOrigin+'/posts/'+id)).text(),/是一种结构/);
+ const saveStarted=Date.now();saved=await local('admin/editor-drafts',{articleId:id,document:{title:published.title,body:'PRIVATE_UNPUBLISHED_EDIT'+ 'x'.repeat(100*1024),folderId:'root',kind:'post'},baseVersion:published.version,draftVersion:null});await synced();const saveLatency=Date.now()-saveStarted;assert.ok(saveLatency<2000,'100 KiB online draft should synchronize in 2 seconds: '+saveLatency+'ms');console.log('100 KiB draft sync: '+saveLatency+'ms');assert.doesNotMatch(await(await fetch(serverOrigin+'/posts/'+id)).text(),/PRIVATE_UNPUBLISHED_EDIT/);
+ const upload=new FormData();upload.set('articleId',id);upload.set('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')],{type:'image/png'}),'sync.png');const uploadResponse=await fetch(clientOrigin+'/api/admin/media',{method:'POST',headers:{Origin:clientOrigin,'x-salmon-desktop-token':desktopToken},body:upload});assert.equal(uploadResponse.status,200);const uploaded=await uploadResponse.json();await synced();assert.equal((await fetch(serverOrigin+'/api/media/'+uploaded.id+'?article='+id)).status,404,'unpublished attachment must remain private');
+ const events=new AbortController(),stream=await fetch(serverOrigin+'/api/sync/v1/events',{headers:{Authorization:'Bearer '+secret},signal:events.signal});assert.equal(stream.status,200);const reader=stream.body!.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/data:/);events.abort();await reader.cancel().catch(()=>{});
+ await stop(cloud);const start=Date.now();saved=await local('admin/editor-drafts',{articleId:id,document:{title:published.title,body:'OFFLINE_PERSISTED_EDIT',folderId:'root',kind:'post'},baseVersion:saved.draft.baseVersion,draftVersion:saved.draft.draftVersion});assert.ok(Date.now()-start<2000,'offline local save must not wait for the network');await stop(desktop);
+ cloud=await launch(false);desktop=await launch(true,secret);await synced();
+ const bootstrap=await(await fetch(serverOrigin+'/api/sync/v1/bootstrap',{headers:{Authorization:'Bearer '+secret}})).json();const draft=bootstrap.files.find((file:any)=>file.path==='editor-drafts/'+id+'.json');assert.equal(JSON.parse(Buffer.from(draft.data,'base64').toString()).document.body,'OFFLINE_PERSISTED_EDIT');assert.doesNotMatch(await(await fetch(serverOrigin+'/posts/'+id)).text(),/OFFLINE_PERSISTED_EDIT/);
+ const login=await fetch(serverOrigin+'/api/login',{method:'POST',headers:{Origin:serverOrigin,'Content-Type':'application/json'},body:JSON.stringify({password})});assert.equal(login.status,200);const cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+ const denied=await fetch(serverOrigin+'/api/admin/articles',{method:'POST',headers:{Origin:serverOrigin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({title:'Blocked',body:'blocked'})});assert.equal(denied.status,403);
+ const revoked=await fetch(serverOrigin+'/api/admin/sync/revoke',{method:'POST',headers:{Origin:serverOrigin,Cookie:cookie,'Content-Type':'application/json'},body:'{}'});assert.equal(revoked.status,200);assert.equal((await fetch(serverOrigin+'/api/sync/v1/identity',{headers:{Authorization:'Bearer '+secret}})).status,401);
+ console.log('Direct sync HTTP passed: offline restart, automatic draft sync, explicit publication, SSE, read-only website, credential revocation.');
+}finally{for(const child of children)await stop(child);}

@@ -16,7 +16,7 @@ import type {PageDocument} from '@/lib/editor-draft-model';
 import {DraftSaveSession,type SaveStatus} from '@/lib/draft-save-session';
 import type {EditorDraftSummary,ClientEditorDraft} from '@/lib/editor-draft-model';
 import {MediaLibrary,ImagePicker} from './media-library';
-import {GitPanel,RepositoryIndicator} from './git-panel';
+import {ReadonlyMedia,SyncPanel,SyncIndicator} from './sync-panel';
 import {ProgramUpdates} from './program-updates';
 type ClientArticle=Omit<Article,'passwordHash'>&{hasPassword:boolean};
 type ClientFolder=Omit<Folder,'passwordHash'>&{hasPassword:boolean};
@@ -31,7 +31,7 @@ function updateContent(state:State,article:ClientArticle):State{return {...state
 export function AdminWorkspace({initial}:{initial:State}){
   const [state,setState]=useState(initial);
   const [imagePicker,setImagePicker]=useState(false);
-  const [section,setSection]=useState(initial.desktop&&!initial.gitEnabled?'commits':'articles');
+  const [section,setSection]=useState('articles');
   useEffect(()=>{if(new URLSearchParams(window.location.search).get('section')==='commits')setSection('commits');},[]);
   const [folder,setFolder]=useState('root');
   const [query,setQuery]=useState('');
@@ -60,6 +60,7 @@ export function AdminWorkspace({initial}:{initial:State}){
   const clearRecovery=()=>{try{localStorage.removeItem('salmon-editor-recovery');}catch{}void window.salmonDesktop?.clearRecovery().catch(()=>{});setRecovery(null);};
   useEffect(()=>{setFullscreenAvailable(!!document.fullscreenEnabled);const change=()=>setFullscreen(!!document.fullscreenElement);document.addEventListener('fullscreenchange',change);return()=>document.removeEventListener('fullscreenchange',change);},[]);
   useEffect(()=>{const current=editing.current;if(!doc||!current)return;const timer=current.session.startAutosave();return()=>clearInterval(timer);},[editorSession,!!doc]);
+  useEffect(()=>{if(!dirty||!doc)return;const timer=setTimeout(()=>{const current=editing.current;if(current&&!current.session.blocked)void current.session.save().catch(()=>{});},800);return()=>clearTimeout(timer);},[doc,dirty]);
   async function refresh(){const data=await api('admin/state');setState(data);return data as State;}
   async function run(action:()=>Promise<void>){setBusy(true);try{await action();}catch(e){toast((e as Error).message,true);}finally{setBusy(false);}}
   function requestLeave(action:()=>void){
@@ -148,8 +149,8 @@ export function AdminWorkspace({initial}:{initial:State}){
   }
   async function save(nextStatus?:'draft'|'published'){
     const current=editing.current;if(!current)throw new Error('请先选择文章');
-    if(nextStatus==='published'){const article=await current.session.push();toast(state.gitEnabled?'已准备发布，请在待提交页面提交并推送':'修改已发布');return article;}
-    if(nextStatus==='draft'){const result=await current.session.unpublish();toast(state.gitEnabled?'已准备撤回，请在待提交页面提交并推送':'文章已撤回，编辑稿已保留');return result.article;}
+    if(nextStatus==='published'){const article=await current.session.push();toast('网站已确认发布');return article;}
+    if(nextStatus==='draft'){const result=await current.session.unpublish();toast('网站已确认撤回，编辑稿已保留');return result.article;}
     await current.session.save();return current.document;
   }
   async function upload(file:File){await run(async()=>{
@@ -179,7 +180,7 @@ export function AdminWorkspace({initial}:{initial:State}){
   let added=true;while(added){added=false;for(const f of state.folders)if(ids.has(f.parentId)&&!ids.has(f.id)){ids.add(f.id);added=true;}}
   const articles=state.articles.map(article=>{const draft=state.editorDrafts?.find(value=>value.articleId===article.id);return draft?{...article,title:draft.title,folderId:draft.folderId}:article;}).filter(a=>(folder==='root'||ids.has(a.folderId))&&(status==='all'||a.status===status)&&a.title.toLowerCase().includes(query.toLowerCase()));
   const settingsActive=section==='settings'||section==='import';
-  const saveText=saveStatus.phase==='saving'?'正在保存编辑稿…':saveStatus.phase==='error'?saveStatus.error||'保存失败':dirty?'有未保存的修改':saveStatus.savedAt?'编辑稿已保存':'已保存';
+  const saveText=saveStatus.phase==='saving'?'正在保存编辑稿…':saveStatus.phase==='error'?saveStatus.error||'保存失败':dirty?'有未保存的修改':'本地已保存';
   return <div ref={shell} className={`admin-shell${doc?' is-writing':''}`}>
     {!doc&&<header className="admin-topbar">
       <div className="admin-topbar-start"><Link href="/admin" className="admin-brand" aria-label="返回文章管理" onClick={e=>{e.preventDefault();go('articles');}}><img src={state.settings.logo} alt="站点 Logo"/></Link></div>
@@ -187,22 +188,25 @@ export function AdminWorkspace({initial}:{initial:State}){
         <button type="button" aria-current={section==='articles'||section==='trash'?'page':undefined} onClick={()=>go('articles')}>文章</button>
         <button type="button" aria-current={section==='pages'?'page':undefined} onClick={()=>go('pages')}>页面</button>
         <button type="button" aria-current={section==='media'?'page':undefined} onClick={()=>go('media')}>媒体库</button>
-        <button type="button" aria-current={section==='commits'?'page':undefined} onClick={()=>go('commits')}>提交</button>
+        <button type="button" aria-current={section==='commits'?'page':undefined} onClick={()=>go('commits')}>同步</button>
+        {state.desktop&&<button type="button" onClick={()=>go('import')}>导入</button>}
         {!state.desktop&&<button type="button" aria-current={settingsActive?'page':undefined} onClick={()=>go('settings')}>设置</button>}
       </nav>
       <nav className="admin-account-nav" aria-label="账户操作">
         <button type="button" className="text-button" onClick={()=>go('updates')}>更新</button>
-        {state.gitEnabled&&<RepositoryIndicator onOpen={()=>go('commits')}/>}
-        {state.desktop?<button className="text-button" onClick={()=>go('commits')}>仓库连接</button>:<><Link href="/" target="_blank" aria-label="访问博客"><span>访问博客</span><ArrowUpRight size={16}/></Link><button type="button" aria-label="退出" disabled={busy} onClick={()=>requestLeave(()=>{run(async()=>{await api('logout',{});localStorage.removeItem('salmon-editor-recovery');router.push('/admin/login');router.refresh();});})}><LogOut size={16}/><span>退出</span></button></>}
+        {state.desktop&&<SyncIndicator onOpen={()=>go('commits')}/>}
+        {state.desktop?<button className="text-button" onClick={()=>go('commits')}>网站连接</button>:<><Link href="/" target="_blank" aria-label="访问博客"><span>访问博客</span><ArrowUpRight size={16}/></Link><button type="button" aria-label="退出" disabled={busy} onClick={()=>requestLeave(()=>{run(async()=>{await api('logout',{});localStorage.removeItem('salmon-editor-recovery');router.push('/admin/login');router.refresh();});})}><LogOut size={16}/><span>退出</span></button></>}
       </nav>
     </header>}
     <div className="admin-workspace"><main id="main" className="admin-main">
       {notice&&<div className={'admin-notice'+(notice.error?' error':'')} role="status"><span>{notice.text}</span><button aria-label="关闭提示" onClick={()=>setNotice(null)}><X size={14}/></button></div>}
-      {state.desktop&&!state.gitEnabled&&!doc&&<div className="admin-notice"><span>连接私有内容仓库后，即可离线编辑并同步网站。</span><button onClick={()=>go('commits')}>连接仓库</button></div>}
-      {section==='media'&&!doc&&<MediaLibrary onChanged={()=>void refresh()}/>}
-      {section==='commits'&&!doc&&<GitPanel desktop={!!state.desktop} onChanged={refresh}/>}
+      {state.desktop&&!state.gitEnabled&&!doc&&<div className="admin-notice"><span>内容已保存在本机。连接网站后自动同步草稿。</span><button onClick={()=>go('commits')}>连接网站</button></div>}
+      {!state.desktop&&section==='media'&&!doc&&<ReadonlyMedia/>}
+      {state.desktop&&section==='media'&&!doc&&<MediaLibrary onChanged={()=>void refresh()}/>}
+      {!state.desktop&&['articles','pages','trash'].includes(section)&&<section><div className="admin-page-heading"><h1>{section==='pages'?'页面':'网站内容'}</h1><span className="muted">请使用桌面客户端编辑</span></div>{[...state.articles,...(state.pages||[])].filter(article=>section==='pages'?article.kind==='page':article.kind==='post').map(article=><p key={article.id}><Link href={'/admin/preview/'+article.id} target="_blank">{article.title} ↗</Link><span className="small muted"> · {article.status==='published'?'已发布':'草稿'}</span></p>)}</section>}
+      {section==='commits'&&!doc&&<SyncPanel desktop={!!state.desktop} onChanged={refresh}/>}
       {section==='updates'&&!doc&&<ProgramUpdates desktop={!!state.desktop}/>}
-      {section==='articles'&&!doc&&<>
+      {state.desktop&&section==='articles'&&!doc&&<>
         <div className="admin-page-heading"><h1>{folder==='root'?'文章与笔记':activeFolder?.name}</h1><div className="admin-actions">
           <button className="button secondary" onClick={()=>go('trash')}><Trash2 size={15}/>回收站<span className="count-badge">{state.trash.length}</span></button>
           {folder!=='root'&&<button className="button secondary" onClick={()=>editFolder(activeFolder)}>编辑文件夹</button>}
@@ -227,7 +231,7 @@ export function AdminWorkspace({initial}:{initial:State}){
             <div className="admin-article-list">{articles.map(a=><article className="admin-article-card" key={a.id} data-article-id={a.id}>
               <div className="admin-card-content"><div className="admin-card-heading"><h2><button className="article-title-button" onClick={()=>switchDocument(a)}>{a.title}</button></h2><div className="admin-card-status">
                 <span className={'status-label '+a.status}>{a.status==='published'?(state.gitEnabled?'发布':'已发布'):'草稿'}</span>
-                {state.editorDrafts?.some(draft=>draft.articleId===a.id)&&<span className="status-label pending-draft">{state.gitEnabled?'有未发布编辑稿':'有未推送修改'}</span>}
+                {state.editorDrafts?.some(draft=>draft.articleId===a.id)&&<span className="status-label pending-draft">{state.gitEnabled?'有未发布编辑稿':'有未发布修改'}</span>}
               </div></div>
               {a.summary&&<p className="admin-card-summary">{a.summary}</p>}
               <div className="admin-card-meta">
@@ -237,7 +241,7 @@ export function AdminWorkspace({initial}:{initial:State}){
               </div></div>
               <div className="admin-card-actions">
                 <button className="text-button" onClick={()=>switchDocument(a)} aria-label={'编辑 '+a.title}><Pencil size={14}/>编辑</button>
-                <Link className="text-button" href={state.gitEnabled?'/admin/preview/'+a.id:'/posts/'+a.id} target="_blank" aria-label={'预览 '+a.title}><ArrowUpRight size={15}/>预览</Link>
+                <Link className="text-button" href={'/admin/preview/'+a.id} target="_blank" aria-label={'预览 '+a.title}><ArrowUpRight size={15}/>预览</Link>
                 <button className="text-button" onClick={()=>{if(window.confirm('将「'+a.title+'」移入回收站？'))run(async()=>{await api('admin/trash',{id:a.id,kind:'article'});await refresh();toast('已移入回收站');});}} aria-label={'删除 '+a.title}><Trash2 size={14}/>删除</button>
               </div>
             </article>)}</div>
@@ -245,11 +249,11 @@ export function AdminWorkspace({initial}:{initial:State}){
           </section>
         </div>
       </>}
-      {section==='pages'&&!doc&&<>
+      {state.desktop&&section==='pages'&&!doc&&<>
         <div className="admin-page-heading"><h1>页面</h1><div className="admin-actions"><button className="button secondary" onClick={()=>go('trash')}><Trash2 size={15}/>回收站</button><button className="button primary" onClick={()=>switchDocument({...newDocument(state.folders.find(f=>f.path==='独立页面')?.id||'root'),kind:'page',contentFormat:'html',css:'',route:''})}><Plus size={15}/>新建页面</button></div></div>
         <div className="admin-filters"><input aria-label="搜索页面" placeholder="搜索页面标题或地址…" value={query} onChange={event=>setQuery(event.target.value)}/><select aria-label="页面发布状态" value={status} onChange={event=>setStatus(event.target.value)}><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select></div>
         <div className="admin-article-list">{(state.pages||[]).filter(page=>(status==='all'||page.status===status)&&(page.title+' '+(page.route||'')).toLowerCase().includes(query.toLowerCase())).map(page=><article className="admin-article-card" key={page.id}>
-          <div className="admin-card-content"><div className="admin-card-heading"><h2><button className="article-title-button" onClick={()=>switchDocument(page)}>{state.editorDrafts?.find(draft=>draft.articleId===page.id)?.title||page.title}</button></h2><div className="admin-card-status"><span className={'status-label '+page.status}>{page.status==='published'?(state.gitEnabled?'发布':'已发布'):'草稿'}</span>{state.editorDrafts?.some(draft=>draft.articleId===page.id)&&<span className="status-label pending-draft">{state.gitEnabled?'有未发布编辑稿':'有未推送修改'}</span>}</div></div>
+          <div className="admin-card-content"><div className="admin-card-heading"><h2><button className="article-title-button" onClick={()=>switchDocument(page)}>{state.editorDrafts?.find(draft=>draft.articleId===page.id)?.title||page.title}</button></h2><div className="admin-card-status"><span className={'status-label '+page.status}>{page.status==='published'?(state.gitEnabled?'发布':'已发布'):'草稿'}</span>{state.editorDrafts?.some(draft=>draft.articleId===page.id)&&<span className="status-label pending-draft">{state.gitEnabled?'有未发布编辑稿':'有未发布修改'}</span>}</div></div>
           {page.summary&&<p className="admin-card-summary">{page.summary}</p>}
           <div className="admin-card-meta"><code>{page.route||page.aliases[0]||'/posts/'+page.id}</code><span>HTML + CSS</span><span>{accessNames[page.access||'inherit']}</span><span>更新于 <time dateTime={page.updatedAt}>{dateText(page.updatedAt)}</time></span></div></div>
           <div className="admin-card-actions"><button className="text-button" onClick={()=>switchDocument(page)}><Pencil size={14}/>编辑</button><Link className="text-button" href={state.gitEnabled?'/admin/preview/'+page.id:page.status==='published'&&page.route?page.route:'/posts/'+page.id} target="_blank" rel="noopener noreferrer"><ArrowUpRight size={15}/>打开</Link><button className="text-button" onClick={()=>{if(window.confirm('将「'+page.title+'」移入回收站？'))run(async()=>{await api('admin/trash',{id:page.id,kind:'article'});await refresh();toast('页面已移入回收站');});}}><Trash2 size={14}/>删除</button></div>
@@ -258,15 +262,16 @@ export function AdminWorkspace({initial}:{initial:State}){
       </>}
       {doc&&<>
         <WritingMenu onExit={()=>switchDocument(null)} entity={doc.kind==='page'?'页面':'文章'} open={menuOpen} onOpenChange={open=>{if(open)writing.current?.closePanels();setMenuOpen(open);}} status={saveText} statusKind={saveStatus.phase==='error'?'error':saveStatus.phase==='saving'?'saving':dirty?'dirty':'saved'}>
-          <div className={'writing-draft-status'+(saveStatus.phase==='error'?' error':'')} role="status"><strong>{saveText}</strong><span title={doc.status==='published'?'保存编辑稿不会更新前台':'草稿仅管理员可见'}>{state.gitEnabled?(doc.status==='published'?'目标状态：发布 · 推送同步后生效':'目标状态：草稿 · 访客不可见'):doc.status==='published'?'已发布':'草稿 · 尚未发布'}</span>{saveStatus.savedAt&&<time dateTime={saveStatus.savedAt}>上次保存 {new Date(saveStatus.savedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time>}</div>
+          <div className={'writing-draft-status'+(saveStatus.phase==='error'?' error':'')} role="status"><strong>{saveText}</strong><span title={doc.status==='published'?'保存编辑稿不会更新前台':'草稿仅管理员可见'}>{doc.status==='published'?'已发布 · 当前编辑仍为草稿':'草稿 · 尚未发布'}</span>{saveStatus.savedAt&&<time dateTime={saveStatus.savedAt}>上次保存 {new Date(saveStatus.savedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time>}</div>
+          <SyncIndicator onOpen={()=>{setMenuOpen(false);go('commits');}}/>
           <div className="writing-action-group"><div className="writing-menu-actions">
-            <button className="button primary writing-publish" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save('published');})}>{state.gitEnabled?(doc.status==='published'?'准备更新':'准备发布'):doc.status==='published'?'推送修改':doc.kind==='page'?'发布页面':'发布文章'}<ArrowRight size={15}/></button>
-            {state.gitEnabled&&<button className="button secondary" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save();setSection('commits');editing.current=null;setDoc(null);setDirty(false);setMenuOpen(false);})}>查看提交</button>}
+            <button className="button primary writing-publish" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save('published');})}>{doc.status==='published'?'更新到网站':doc.kind==='page'?'发布页面':'发布文章'}<ArrowRight size={15}/></button>
+
             <button className="button secondary" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save();})}><Save size={15}/>保存</button>
-            {doc.version?<Link className="button secondary" href={state.gitEnabled?'/admin/preview/'+doc.id:doc.kind==='page'&&doc.status==='published'&&doc.route?doc.route:'/posts/'+doc.id} target="_blank" rel="noopener noreferrer"><ArrowUpRight size={15}/>工作区预览</Link>:<button className="button secondary" disabled title="保存后可打开"><ArrowUpRight size={15}/>打开</button>}
+            {doc.version?<Link className="button secondary" href={'/admin/preview/'+doc.id} target="_blank" rel="noopener noreferrer"><ArrowUpRight size={15}/>工作区预览</Link>:<button className="button secondary" disabled title="保存后可打开"><ArrowUpRight size={15}/>打开</button>}
             <button className="button secondary" disabled={!fullscreenAvailable} onClick={()=>run(async()=>{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();})}>{fullscreen?<Minimize2 size={15}/>:<Maximize2 size={15}/>} {fullscreen?'退出全屏':'全屏'}</button>
           </div><label className="writing-summary">{doc.kind==='page'?'页面摘要':'文章摘要'}<textarea rows={3} value={doc.summary||''} onChange={event=>change({summary:event.target.value})}/></label></div>
-          {doc.status==='published'&&<button className="text-button writing-unpublish" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save('draft');})}>{state.gitEnabled?'准备撤回为草稿':'撤回为草稿'}</button>}
+          {doc.status==='published'&&<button className="text-button writing-unpublish" disabled={busy||saveStatus.blocked} onClick={()=>run(async()=>{await save('draft');})}>撤回为草稿</button>}
           {doc.kind!=='page'&&<div className="writing-mobile-tools"><div className="writing-view-modes" role="group" aria-label="编辑模式">{([['visual','可视化'],['code','源码'],['preview','预览']] as const).map(([value,label])=><button type="button" key={value} aria-pressed={mode===value} className={mode===value?'active':''} onClick={()=>{setMode(value);setMenuOpen(false);}}>{label}</button>)}</div><button className="button secondary" disabled={!blockAvailable||mode==='preview'} onClick={()=>{setMenuOpen(false);setTimeout(()=>writing.current?.openBlockSettings(),0);}}><PanelRight size={15}/>区块设置</button></div>}
           <h3 className="writing-menu-section-title">{doc.kind==='page'?'页面设置':'文章设置'}</h3><ArticleSettings doc={doc} folders={articleFolders} onChange={change}/>
         </WritingMenu>
@@ -274,12 +279,13 @@ export function AdminWorkspace({initial}:{initial:State}){
           <div className={'writing-column'+(doc.kind==='page'?' page-writing-column':'')}>{doc.kind==='page'?<PageEditor key={editorSession} ref={pageWriting} doc={doc as PageDocument} onChange={change} onUpload={upload} onChooseMedia={chooseImage} preview={preview} previewCss={previewCss} previewClass={previewClass} previewError={previewError}/>:<WritingEditor key={editorSession} ref={writing} doc={doc} dirty={dirty} mode={mode} onModeChange={setMode} preview={preview} onChange={change} onUpload={upload} onChooseMedia={chooseImage} onBlockAvailabilityChange={setBlockAvailable} onError={message=>toast(message,true)}/>}</div>
         </section>
       </>}
-      {section==='trash'&&<>
+      {state.desktop&&section==='trash'&&<>
         <button className="text-button admin-tool-back" onClick={()=>go('articles')}><ChevronLeft size={15}/>返回文章管理</button>
         <div className="admin-page-heading"><h1>回收站</h1><span className="count-badge">{state.trash.length} 项</span></div>
         <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>内容</th><th>移除日期</th><th>操作</th></tr></thead><tbody>{state.trash.map(t=><tr key={t.id}><td>{t.title}<small>{t.kind==='folder'?'文件夹':'文章'} · {t.originalPath}</small></td><td>{dateText(t.time)}</td><td><button className="text-button" onClick={()=>run(async()=>{await api('admin/restore',{id:t.id});await refresh();toast('已恢复到原位置');})}><RotateCcw size={13}/>恢复</button></td></tr>)}</tbody></table></div>
         {!state.trash.length&&<div className="empty-state"><Trash2 size={27}/><h3>回收站是空的。</h3></div>}
       </>}
+      {section==='settings'&&<p><a className="button secondary" href="/api/admin/backup">下载整站备份</a></p>}
       {section==='settings'&&<SettingsPanel settings={settingsDraft} folders={state.folders} busy={busy} onChange={setSettingsDraft} onImport={()=>go('import')} onSave={settings=>run(async()=>{await api('admin/settings',settings);const next=await refresh();setSettingsDraft(next.settings);toast('站点设置已保存');})}/>}
       {section==='import'&&<><button className="text-button admin-tool-back" onClick={()=>go('settings')}><ChevronLeft size={15}/>返回站点设置</button><ImportPanel onDone={async()=>{await refresh();}} toast={toast}/></>}
     </main></div>
@@ -307,7 +313,7 @@ export function AdminWorkspace({initial}:{initial:State}){
 }
 
 function SettingsPanel({settings:value,folders,busy,onSave,onChange,onImport}:{settings:SiteSettings;folders:ClientFolder[];busy:boolean;onSave:(s:SiteSettings)=>void;onChange:(s:SiteSettings)=>void;onImport:()=>void}){
- const set=(patch:Partial<SiteSettings>)=>onChange({...value,...patch});return <form onSubmit={e=>{e.preventDefault();onSave(value);}}><div className="admin-page-heading"><div><h1>站点设置</h1></div><div className="admin-actions"><button className="button secondary" type="button" onClick={onImport}><Upload size={14}/>WordPress 导入</button><button className="button primary" disabled={busy}><Save size={14}/>保存设置</button></div></div><div className="settings-grid"><h2 className="settings-section-title settings-wide">基本信息</h2>{([['title','站点名称'],['subtitle','站点副标题'],['email','联系邮箱'],['logo','Logo 地址'],['description','站点简介'],['footer','备案号']] as const).map(([k,label])=><label className="settings-field" key={k}>{label}<input value={value[k]} onChange={e=>set({[k]:e.target.value})}/></label>)}<label className="settings-field settings-wide">前台目录根文件夹<select value={value.knowledgeRootId||folders.find(f=>f.path==='博客')?.id||''} onChange={e=>set({knowledgeRootId:e.target.value})}><option value="">未选择</option>{folders.filter(f=>f.id!=='root').map(f=><option key={f.id} value={f.id}>{f.path}</option>)}</select></label><h2 className="settings-section-title settings-wide">导航</h2><div className="settings-wide">{value.navigation.map((n,i)=><div className="setting-nav-row" key={i}><input aria-label="导航标题" value={n.label} onChange={e=>set({navigation:value.navigation.map((x,j)=>i===j?{...x,label:e.target.value}:x)})}/><input aria-label="导航链接" value={n.href} onChange={e=>set({navigation:value.navigation.map((x,j)=>i===j?{...x,href:e.target.value}:x)})}/><button type="button" onClick={()=>set({navigation:value.navigation.filter((_,j)=>j!==i)})} aria-label="删除导航"><X size={16}/></button></div>)}<button className="text-button" type="button" onClick={()=>set({navigation:[...value.navigation,{label:'新链接',href:'/knowledge'}]})}><Plus size={14}/>添加导航</button></div><h2 className="settings-section-title settings-wide">首页内容</h2><div className="settings-box settings-wide"><p style={{marginTop:0,marginBottom:12}}>选择首页展示的文件夹；不选择时显示所有已发布博客文章，独立页面不进入文章列表。</p>{folders.filter(f=>f.id!=='root').map(f=><label key={f.id}><input type="checkbox" checked={value.homeFolders.includes(f.id)} onChange={e=>set({homeFolders:e.target.checked?[...value.homeFolders,f.id]:value.homeFolders.filter(id=>id!==f.id)})}/>{f.path}</label>)}</div><h2 className="settings-section-title settings-wide">Giscus 评论</h2><div className="settings-box settings-wide"><label><input type="checkbox" checked={value.giscus.enabled} onChange={e=>set({giscus:{...value.giscus,enabled:e.target.checked}})}/>公开文章启用评论</label><p>密码和私密文章始终关闭评论。Giscus 评论存储在公开的 GitHub Discussions。</p></div>{([['repo','仓库（owner/repo）'],['repoId','仓库 ID'],['category','Discussion 分类'],['categoryId','分类 ID']] as const).map(([k,label])=><label className="settings-field" key={k}>{label}<input value={value.giscus[k]} onChange={e=>set({giscus:{...value.giscus,[k]:e.target.value}})}/></label>)}</div></form>;
+ const set=(patch:Partial<SiteSettings>)=>onChange({...value,...patch});return <form onSubmit={e=>{e.preventDefault();onSave(value);}}><div className="admin-page-heading"><div><h1>站点设置</h1></div><div className="admin-actions"><button className="button primary" disabled={busy}><Save size={14}/>保存设置</button></div></div><div className="settings-grid"><h2 className="settings-section-title settings-wide">基本信息</h2>{([['title','站点名称'],['subtitle','站点副标题'],['email','联系邮箱'],['logo','Logo 地址'],['description','站点简介'],['footer','备案号']] as const).map(([k,label])=><label className="settings-field" key={k}>{label}<input value={value[k]} onChange={e=>set({[k]:e.target.value})}/></label>)}<label className="settings-field settings-wide">前台目录根文件夹<select value={value.knowledgeRootId||folders.find(f=>f.path==='博客')?.id||''} onChange={e=>set({knowledgeRootId:e.target.value})}><option value="">未选择</option>{folders.filter(f=>f.id!=='root').map(f=><option key={f.id} value={f.id}>{f.path}</option>)}</select></label><h2 className="settings-section-title settings-wide">导航</h2><div className="settings-wide">{value.navigation.map((n,i)=><div className="setting-nav-row" key={i}><input aria-label="导航标题" value={n.label} onChange={e=>set({navigation:value.navigation.map((x,j)=>i===j?{...x,label:e.target.value}:x)})}/><input aria-label="导航链接" value={n.href} onChange={e=>set({navigation:value.navigation.map((x,j)=>i===j?{...x,href:e.target.value}:x)})}/><button type="button" onClick={()=>set({navigation:value.navigation.filter((_,j)=>j!==i)})} aria-label="删除导航"><X size={16}/></button></div>)}<button className="text-button" type="button" onClick={()=>set({navigation:[...value.navigation,{label:'新链接',href:'/knowledge'}]})}><Plus size={14}/>添加导航</button></div><h2 className="settings-section-title settings-wide">首页内容</h2><div className="settings-box settings-wide"><p style={{marginTop:0,marginBottom:12}}>选择首页展示的文件夹；不选择时显示所有已发布博客文章，独立页面不进入文章列表。</p>{folders.filter(f=>f.id!=='root').map(f=><label key={f.id}><input type="checkbox" checked={value.homeFolders.includes(f.id)} onChange={e=>set({homeFolders:e.target.checked?[...value.homeFolders,f.id]:value.homeFolders.filter(id=>id!==f.id)})}/>{f.path}</label>)}</div><h2 className="settings-section-title settings-wide">Giscus 评论</h2><div className="settings-box settings-wide"><label><input type="checkbox" checked={value.giscus.enabled} onChange={e=>set({giscus:{...value.giscus,enabled:e.target.checked}})}/>公开文章启用评论</label><p>密码和私密文章始终关闭评论。Giscus 评论存储在公开的 GitHub Discussions。</p></div>{([['repo','仓库（owner/repo）'],['repoId','仓库 ID'],['category','Discussion 分类'],['categoryId','分类 ID']] as const).map(([k,label])=><label className="settings-field" key={k}>{label}<input value={value.giscus[k]} onChange={e=>set({giscus:{...value.giscus,[k]:e.target.value}})}/></label>)}</div></form>;
 }
 
 function ImportPanel({onDone,toast}:{onDone:()=>Promise<void>;toast:(message:string,error?:boolean)=>void}){

@@ -41,9 +41,8 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then echo "Tag and package version differ" >&2; exit 1; fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker build --build-arg SALMON_RELEASE_REPOSITORY="$GITHUB_REPOSITORY" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image:$version" -t "$image:latest" .
+          docker build --build-arg SALMON_RELEASE_REPOSITORY="$GITHUB_REPOSITORY" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image:$version" .
           docker push "$image:$version"
-          docker push "$image:latest"
   desktop:
     needs: website
     runs-on: windows-latest
@@ -77,6 +76,12 @@ jobs:
           Copy-Item dist/deployment/public/Salmon-Isle-Server-*.tar.gz dist/desktop/
           npm run release:metadata
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Verify packaged desktop without system Git
+        run: npm run desktop:smoke -- --executable "dist/desktop/win-unpacked/Salmon Isle Writer.exe" --no-system-tools
+      - name: Verify overwrite upgrade from published 1.x
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run test:upgrade
       - name: Publish release
         shell: pwsh
         env:
@@ -84,6 +89,39 @@ jobs:
         run: |
           $version=(Get-Content package.json | ConvertFrom-Json).version
           if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and package version differ'}
-          $assets=Get-ChildItem dist/desktop -File | Where-Object { $_.Name -match '\.(exe|zip|blockmap|yml|tar\.gz)$' -or $_.Name -in @('release.json','SHA256SUMS.txt') } | ForEach-Object { $_.FullName }
+          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz) } | ForEach-Object { $_.FullName }
           gh release view "v$version" *> $null
-          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --generate-notes}
+          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
+
+  publish:
+    needs: [verify, website, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish complete release and website latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --tag "$image:latest" "$image:$version"
+          gh release edit "v$version" --draft=false --latest
+) -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','升级到2.0.md') } | ForEach-Object { $_.FullName }
+          gh release view "v$version" *> $null
+          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
+
+  publish:
+    needs: [verify, website, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish complete release and website latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --tag "$image:latest" "$image:$version"
+          gh release edit "v$version" --draft=false --latest

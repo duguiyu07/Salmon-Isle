@@ -9,6 +9,7 @@ const scopes=new AsyncLocalStorage<LibraryScope>();
 const connections=new AsyncLocalStorage<RepositoryConfig>();
 export function runtimeDir(){return path.resolve(process.env.SALMON_DATA_DIR||'./data');}
 export function isDesktop(){return process.env.SALMON_DESKTOP==='true';}
+export function directLibraryRoot():string|null{const file=path.join(runtimeDir(),'direct-library.json');return fs.existsSync(file)?path.join(runtimeDir(),'library-v2'):null;}
 export function repositoryConfig():RepositoryConfig|null{
   const scoped=connections.getStore();if(scoped)return scoped;
   const saved=path.join(runtimeDir(),'library-connection.json');
@@ -19,12 +20,14 @@ export function repositoryConfig():RepositoryConfig|null{
 }
 export function withRepositoryConfig<T>(config:RepositoryConfig,callback:()=>T):T{return connections.run(config,callback);}
 export function activeRevision():string|null{
+  if(directLibraryRoot())return null;
   const file=path.join(runtimeDir(),'library-active.json');
   if(!fs.existsSync(file))return null;
   const {revision}=JSON.parse(fs.readFileSync(file,'utf8'));
   return typeof revision==='string'&&/^[a-f0-9]{40,64}$/.test(revision)?revision:null;
 }
 export function activeRoot(){
+  const direct=directLibraryRoot();if(direct)return direct;
   const config=repositoryConfig();
   if(isDesktop()&&config)return config.workspace;
   const revision=config&&activeRevision();
@@ -35,9 +38,9 @@ export function activeRoot(){
 const renderRoot=cache(activeRoot);
 export function libraryRoot(){return scopes.getStore()?.root||renderRoot();}
 export function libraryReadOnly(){return scopes.getStore()?.readOnly??(!isDesktop()&&libraryRoot()!==runtimeDir());}
-export function workspaceRoot(){return repositoryConfig()?.workspace||runtimeDir();}
+export function workspaceRoot(){return directLibraryRoot()||repositoryConfig()?.workspace||runtimeDir();}
 export function withLibrary<T>(root:string,callback:()=>T,readOnly=false):T{return scopes.run({root,readOnly},callback);}
 export function withWorkspace<T>(callback:()=>T):T{return withLibrary(workspaceRoot(),callback);}
-export function withPublicLibrary<T>(callback:()=>T):T{return withLibrary(activeRoot(),callback,!isDesktop()&&!!activeRevision());}
+export function withPublicLibrary<T>(callback:()=>T):T{return withLibrary(activeRoot(),callback,!isDesktop()&&(!!directLibraryRoot()||!!activeRevision()));}
 export function libraryPath(...parts:string[]){return path.join(libraryRoot(),...parts);}
 export function assertLibraryWritable(){if(libraryReadOnly())throw new Error('已上线快照不能修改，请在编辑工作区操作');}

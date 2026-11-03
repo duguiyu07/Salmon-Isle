@@ -60,6 +60,6 @@ export class DraftSaveSession{
     this.options.onSaved(result,snapshot);this.options.onStatus({phase:'saved',savedAt:result.draft.savedAt});return result;
   });}
   startAutosave(schedule:(callback:()=>void,delay:number)=>ReturnType<typeof setInterval>=setInterval){
-    return schedule(()=>{if(!this.blocked&&this.dirty())void this.save().catch(()=>{});},60000);
+    return schedule(()=>{if(!this.blocked&&this.dirty())void this.save().catch(()=>{});},5000);
   }
 }

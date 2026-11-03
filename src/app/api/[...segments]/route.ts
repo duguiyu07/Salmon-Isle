@@ -12,8 +12,6 @@ import { visibility,canRead,publicArticle } from '@/lib/access';
 import { dataDir,initDirs,within } from '@/lib/paths';
 import { addMedia,getMedia,listMedia,queryMedia,mediaUrl,mediaReferences,deleteMedia } from '@/lib/media';
 import {recoverLibraryTransaction} from '@/lib/library-transaction';
-import {beginGithubAuthorization,completeGithubManifest,beginGithubUserAuthorization,completeGithubAuthorization,githubConnectionStatus,verifyGithubWebhook,webhookMatchesRepository} from '@/lib/github-auth';
-import {prepareRepositorySetup,applyRepositorySetup,getRepositorySetup} from '@/lib/repository-setup';
 import {programInfo,programUpdateStatus,checkProgramUpdates,saveProgramUpdateSettings} from '@/lib/application-updates';
 import { renderMarkdown } from '@/lib/markdown';
 import { analyzeWordPress,commitImport,convertedZip,ImportAnalysis,ImportChoice,redactImportXml } from '@/lib/wordpress';
@@ -24,7 +22,9 @@ import {renderHtmlPage} from '@/lib/html-pages';
 import {workspacePreviewUrls} from '@/lib/workspace-media-url';
 import {withWorkspace,withPublicLibrary,libraryPath,isDesktop,repositoryConfig,activeRevision,type RepositoryConfig} from '@/lib/library-context';
 import {withRepositoryLock} from '@/lib/repository-lock';
-import {repositoryStatus,synchronizeRepository,commitAndPush,changes,commitHistory,revisionChanges,fileDiff,revisionBlob,conflicts,resolveConflict,connectRepository,startRepositorySync} from '@/lib/content-repository';
+import {beginDirectLibrary,syncDb} from '@/lib/direct-library';
+import {syncStatus,syncConnection,connectSite,disconnectSite,flushSync,localMutation,draftPaths,publishFromDesktop,recoveryList,importRecovery} from '@/lib/sync-engine';
+import {backupData} from '@/lib/backup';
 export const runtime='nodejs';export const dynamic='force-dynamic';
 type Context={params:Promise<{segments:string[]}>};
 const articleSchema=z.object({id:z.string().optional(),title:z.string().min(1).max(500),body:z.string().max(10*1024*1024),folderId:z.string().optional(),version:z.string().optional(),kind:z.enum(['post','page']).optional(),contentFormat:z.enum(['markdown','html']).optional(),css:z.string().max(1024*1024).optional(),route:z.string().max(1000).optional(),template:z.enum(['standard','collection']).optional(),collection:z.object({folderId:z.string(),perPage:z.number().int().min(1).max(50)}).optional(),status:z.enum(['draft','published']).optional(),summary:z.string().max(5000).optional(),cover:z.string().max(2000).optional(),pinned:z.boolean().optional(),order:z.number().optional(),access:z.enum(['inherit','public','private','password']).optional(),password:z.string().max(1024).optional(),aliases:z.array(z.string()).optional(),giscusTerm:z.string().max(1000).optional(),tags:z.array(z.string()).optional()});
@@ -56,41 +56,17 @@ async function getHandler(request:Request,context:Context){try{
     const matches=q?searchIndex(q):new Set<string>();const results=listArticles().filter(a=>a.kind==='post'&&a.status==='published'&&(!q||a.title.toLowerCase().includes(q)||(!visibility(a,folders).restricted&&matches.has(a.id)))).map(a=>publicArticle(a,viewer,folders)).filter(Boolean);return ok({results});
   }
   if(s[0]!=='admin')throw new AppError('接口不存在',404);await requireAdmin();
+  if(s[1]==='backup')return await withRepositoryLock(()=>new Response(new Uint8Array(backupData()),{headers:{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="salmon-isle-backup.zip"','Cache-Control':'private, no-store'}}));
   if(s[1]==='program-updates')return ok(new URL(request.url).searchParams.get('check')==='1'?await checkProgramUpdates():programUpdateStatus());
-  if(s[1]==='git'){
-    const query=new URL(request.url).searchParams;
-    if(s[2]==='setup')return ok(getRepositorySetup(query.get('id')||undefined));
-    if(s[2]==='github'){
-      if(isDesktop())throw new AppError('请在网站后台授权 GitHub',403);
-      if(s[3]==='status')return ok(githubConnectionStatus());
-      const jar=await cookies(),state=query.get('state')||jar.get('salmon_github_flow')?.value||'',session=jar.get(ADMIN_COOKIE)?.value||'';
-      try{
-      if(query.has('error'))return Response.redirect(new URL('/admin?section=commits&github=cancelled',process.env.SALMON_ORIGIN||request.url));
-      if(s[3]==='manifest')return Response.redirect(await completeGithubManifest(state,query.get('code')||'',session));
-      if(s[3]==='installed')return Response.redirect(beginGithubUserAuthorization(state,session));
-      if(s[3]==='authorized'){
-        const result=await completeGithubAuthorization(state,query.get('code')||'',session);jar.delete('salmon_github_flow');
-        return Response.redirect(new URL('/admin?'+new URLSearchParams({section:'commits',github:'connected',remote:result.remote,branch:result.branch}),result.origin));
-      }
-      }catch(error){
-        if(error instanceof AppError)return Response.redirect(new URL('/admin?'+new URLSearchParams({section:'commits',github:'error',reason:error.message}),process.env.SALMON_ORIGIN||request.url));
-        throw error;
-      }
-    }
-    if(s[2]==='status')return ok(await repositoryStatus());
-    if(s[2]==='changes')return ok(query.get('revision')?await revisionChanges(query.get('revision')!):await changes());
-    if(s[2]==='history')return ok(await commitHistory());
-    if(s[2]==='conflicts')return ok(await conflicts());
-    if(s[2]==='diff')return ok(await fileDiff(query.get('path')||'',query.get('revision')||undefined,query.get('oldPath')||undefined));
-    if(s[2]==='blob'){
-      const file=query.get('path')||'',revision=query.get('revision')||'';if(!/^media\/[a-zA-Z0-9_-]{1,100}$/.test(file))throw new AppError('仅允许预览媒体文件');
-      const metadata=JSON.parse((await revisionBlob(revision,'media-meta/'+file.slice(6)+'.json')).toString('utf8'));
-      return new Response(new Uint8Array(await revisionBlob(revision,file)),{headers:{'Content-Type':metadata.type,'Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; sandbox"}});
-    }
-    throw new AppError('Git 接口不存在',404);
+  if(s[1]==='git')throw new AppError('请升级客户端至 2.0，内容同步已改为直接连接网站',410);
+  if(s[1]==='sync'){
+    if(s[2]==='status')return ok(syncStatus());
+    if(s[2]==='connection')return ok(syncConnection());
+    if(s[2]==='recovery')return ok(recoveryList());
+    if(s[2]==='devices')return ok(syncDb().prepare('SELECT id,created FROM sync_devices').all());
   }
   if(s[1]==='media'){const query=new URL(request.url).searchParams;return ok(s[2]?mediaReferences(s[2]):queryMedia({q:query.get('q')||'',type:query.get('type')||'all',usage:query.get('usage')||'all',page:Number(query.get('page'))||1}));}
-  if(s[1]==='state')return ok({articles:listArticles().filter(a=>a.kind==='post').map(clientArticle),pages:listArticles().filter(a=>a.kind==='page').map(clientArticle),editorDrafts:listEditorDrafts(),folders:listFolders().map(clientFolder),settings:getSettings(),trash:listTrash(),desktop:isDesktop(),gitEnabled:!!repositoryConfig()});
+  if(s[1]==='state')return ok({articles:listArticles().filter(a=>a.kind==='post').map(clientArticle),pages:listArticles().filter(a=>a.kind==='page').map(clientArticle),editorDrafts:listEditorDrafts(),folders:listFolders().map(clientFolder),settings:getSettings(),trash:listTrash(),desktop:isDesktop(),gitEnabled:false});
   if(s[1]==='editor-drafts'&&s[2]){
     const article=findArticle(s[2]);if(!article)throw new AppError('文章不存在',404);
     const draft=readEditorDraft(article.id);
@@ -135,34 +111,25 @@ async function postHandler(request:Request,context:Context){try{
   }
   if(s[0]!=='admin')throw new AppError('接口不存在',404);await requireAdmin();
   if(s[1]==='program-updates'){const input=validate(z.object({manifestUrl:z.string().max(2000)}),await jsonBody(request));return ok(saveProgramUpdateSettings(input.manifestUrl));}
-  if(s[1]==='git'){
-    if(s[2]==='github'&&s[3]==='start'){
-      const input=validate(z.object({remote:z.string(),recreate:z.boolean().optional()}),await jsonBody(request)),jar=await cookies();
-      const result=beginGithubAuthorization(input.remote,request.headers.get('origin')||'',jar.get(ADMIN_COOKIE)?.value||'',input.recreate);
-      jar.set('salmon_github_flow',result.state,{...cookieOptions(3600),secure:new URL(request.headers.get('origin')!).protocol==='https:'});return ok(result);
-    }
-    if(s[2]==='setup'&&s[3]==='preflight'){
-      if(isDesktop())throw new AppError('桌面端请使用连接内容仓库',403);
-      const input=validate(z.object({remote:z.string().min(1),workspace:z.string().optional(),branch:z.string().optional(),siteUrl:z.string().optional(),manual:z.boolean().optional()}),await jsonBody(request));
-      return ok(await prepareRepositorySetup(input));
-    }
-    if(s[2]==='setup'&&s[3]==='apply'){if(isDesktop())throw new AppError('仅网站端执行迁移',403);const input=validate(z.object({id:z.string()}),await jsonBody(request));return ok(await applyRepositorySetup(input.id));}
-    if(s[2]==='connect'){const input=validate(z.object({workspace:z.string(),remote:z.string(),branch:z.string().default(''),siteUrl:z.string().default('')}),await jsonBody(request));const result=await connectRepository(input);startRepositorySync();return ok(result);}
-    if(s[2]==='sync')return ok(await synchronizeRepository(true));
-    if(s[2]==='commit'){const input=validate(z.object({message:z.string().max(2000).default(''),operationId:z.string().min(1).max(100)}),await jsonBody(request));return ok(await commitAndPush(input.message,input.operationId));}
-    if(s[2]==='resolve'){const input=validate(z.object({path:z.string(),choice:z.enum(['local','remote','manual']),content:z.string().max(12*1024*1024).optional()}),await jsonBody(request));return ok(await resolveConflict(input.path,input.choice,input.content));}
-    throw new AppError('Git 接口不存在',404);
+  if(s[1]==='git')throw new AppError('请升级至 2.0，Git 内容同步已停用',410);
+  if(s[1]==='sync'){
+    if(s[2]==='revoke'){syncDb().prepare('DELETE FROM sync_devices').run();return ok({success:true});}
+    if(!isDesktop())throw new AppError('请在客户端连接网站',403);
+    if(s[2]==='connect')return ok(await connectSite(validate(z.object({siteUrl:z.string(),password:z.string(),replace:z.boolean().optional()}),await jsonBody(request))));
+    if(s[2]==='disconnect')return ok(disconnectSite());
+    if(s[2]==='retry'){await flushSync();return ok(syncStatus());}
+    if(s[2]==='recover')return ok(await importRecovery((await jsonBody(request)).id));
   }
-  if(isDesktop()&&!repositoryConfig()&&s[1]!=='preview'&&!(s[1]==='pages'&&s[2]==='preview'))throw new AppError('请先在提交页面连接内容仓库',409);
+  if(!isDesktop()&&!['settings','program-updates','preview'].includes(s[1])&&!(s[1]==='pages'&&s[2]==='preview'))throw new AppError('请使用桌面客户端编辑内容',403);
   if(s[1]==='editor-drafts'){
-    if(s[2]&&s[3]==='push')return ok(clientArticle(pushEditorDraft(s[2],validate(draftTokens,await jsonBody(request)))));
+    if(s[2]&&s[3]==='push')return ok(clientArticle(await publishFromDesktop(s[2],validate(draftTokens,await jsonBody(request))) as any));
     if(s[2]&&s[3]==='unpublish'){
-      const result=unpublishWithEditorDraft(s[2],validate(draftTokens,await jsonBody(request)));
+      const result=await publishFromDesktop(s[2],validate(draftTokens,await jsonBody(request)),true) as any;
       return ok({article:clientArticle(result.article),draft:clientEditorDraft(result.draft)});
     }
     if(!s[2]){
       const input=validate(editorDraftSchema,await jsonBody(request));
-      const result=saveEditorDraft(input.articleId,input.document,input);
+      const result=await localMutation('draft',input.articleId,()=>saveEditorDraft(input.articleId,input.document,input),draftPaths(input.articleId,input.document));
       return ok({article:clientArticle(result.article),draft:clientEditorDraft(result.draft)});
     }
     throw new AppError('接口不存在',404);
@@ -198,7 +165,7 @@ async function postHandler(request:Request,context:Context){try{
     const result=commitImport(analysisFor(s[2]),input.choices,{rootFolder:input.rootFolder,zip:fs.existsSync(zip)?fs.readFileSync(zip):undefined});await convertLegacyPages(result.ids);return ok(result);
   }
   throw new AppError('接口不存在',404);
-}catch(e){return fail(e);}}
+}catch(e){throw e;}}
 
 export async function GET(request:Request,context:Context){
   const {segments}=await context.params;
@@ -209,27 +176,18 @@ export async function GET(request:Request,context:Context){
 }
 export async function POST(request:Request,context:Context){
   const {segments}=await context.params;
-  if(segments[0]==='github'&&segments[1]==='webhook'){
-    try{
-      if(isDesktop())throw new AppError('接口不存在',404);
-      const reader=request.body?.getReader(),parts:Uint8Array[]=[];let size=0;
-      if(reader)for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>2*1024*1024){await reader.cancel();throw new AppError('Webhook 请求过大',413);}parts.push(chunk.value);}
-      const body=Buffer.concat(parts);
-      if(!verifyGithubWebhook(body,request.headers.get('x-hub-signature-256')||''))throw new AppError('Webhook 签名无效',403);
-      const input=JSON.parse(body.toString('utf8'));
-      if(request.headers.get('x-github-event')==='push'&&webhookMatchesRepository(input)&&input.ref==='refs/heads/'+repositoryConfig()?.branch){
-        const state=globalThis as typeof globalThis&{salmonWebhookSync?:Promise<unknown>};
-        state.salmonWebhookSync??=synchronizeRepository(false).catch(error=>console.error('Webhook content sync:',error instanceof AppError?error.message:'failed')).finally(()=>{state.salmonWebhookSync=undefined;});
-      }
-      return ok({accepted:true},202);
-    }catch(error){return fail(error);}
-  }
-  if(segments[0]!=='admin')return withPublicLibrary(()=>postHandler(request,context));
-  try{await requireAdmin();return await withWorkspace(()=>segments[1]==='git'?postHandler(request,context):withRepositoryLock(()=>{recoverLibraryTransaction();return postHandler(request,context);}));}catch(error){return fail(error);}
+  if(segments[0]==='github')return fail(new AppError('内容 Git 同步已停用',410));
+  if(segments[0]!=='admin'){try{return await withPublicLibrary(()=>postHandler(request,context));}catch(error){return fail(error);}}
+  try{await requireAdmin();
+    if(segments[1]==='sync'||segments[1]==='editor-drafts'&&['push','unpublish'].includes(segments[3]))return await withWorkspace(()=>postHandler(request,context));
+    return await withWorkspace(()=>withRepositoryLock(()=>{recoverLibraryTransaction();
+      const mutate=isDesktop()&&['articles','pages','folders','trash','restore','media','imports'].includes(segments[1])&&segments[2]!=='preview';
+      return mutate?localMutation('structural',undefined,()=>postHandler(request,context)):postHandler(request,context);
+    }));}catch(error){return fail(error);}
 }
 export async function DELETE(request:Request,context:Context){try{
-  sameOrigin(request);await requireAdmin();const {segments}=await context.params;
+  sameOrigin(request);await requireAdmin();if(!isDesktop())throw new AppError('请使用桌面客户端编辑内容',403);const {segments}=await context.params;
   if(segments[0]!=='admin'||segments[1]!=='media'||!segments[2])throw new AppError('接口不存在',404);
   const input=request.body?validate(z.object({forceTrashReferences:z.boolean().optional()}),await jsonBody(request)):{forceTrashReferences:false};
-  return await withWorkspace(()=>withRepositoryLock(()=>{recoverLibraryTransaction();return ok(deleteMedia(segments[2],input.forceTrashReferences));}));
+  return await withWorkspace(()=>withRepositoryLock(()=>{recoverLibraryTransaction();return localMutation('structural',undefined,()=>ok(deleteMedia(segments[2],input.forceTrashReferences)));}));
 }catch(error){return fail(error);}}

@@ -38,6 +38,10 @@ if [ -n "$new_image" ]; then
 fi
 if ! docker compose up -d --no-deps --wait --wait-timeout 120 blog; then
   if [ -f "$backup/previous.env" ]; then cp "$backup/previous.env" .env; fi
+  docker compose stop blog
+  if [ -d data ]; then mv data "$backup/failed-data"; fi
+  tar -C "$project" -xzf "$backup/data.tar.gz"
+  printf '%s\n' '{"restored":true}' > data/sync-restored.json
   export SALMON_WEB_IMAGE="$image"
   restart_old; echo "Update failed; previous image restored. Backup: $backup" >&2; exit 1
 fi

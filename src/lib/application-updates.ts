@@ -16,7 +16,7 @@ function settings(){const file=settingsFile();return fs.existsSync(file)?JSON.pa
 function newer(version:string,current:string){const a=version.split('.').map(Number),b=current.split('.').map(Number);for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return false;}
 export function programInfo(){
   const config=settings(),latest=cache.get(config.manifestUrl)?.release;
-  return {version:appPackage.version,desktopFeed:process.env.SALMON_DESKTOP_UPDATE_URL||latest?.desktopFeed||releaseBase()};
+  return {version:appPackage.version,syncProtocol:1,upgradeGuideUrl:'https://github.com/'+appPackage.repository.url.replace(/^https:\/\/github\.com\//,'').replace(/\.git$/,'')+'/releases/latest',desktopFeed:process.env.SALMON_DESKTOP_UPDATE_URL||latest?.desktopFeed||releaseBase()};
 }
 export function programUpdateStatus(){const config=settings(),entry=cache.get(config.manifestUrl);return {...programInfo(),manifestUrl:config.manifestUrl,latest:entry?.release||null,available:!!entry&&newer(entry.release.version,appPackage.version),checkedAt:entry?new Date(entry.time).toISOString():null};}
 export function saveProgramUpdateSettings(manifestUrl:string){

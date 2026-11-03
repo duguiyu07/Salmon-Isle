@@ -2,6 +2,44 @@ import type {Node as ProseNode} from '@milkdown/kit/prose/model';
 import {EditorState,Plugin,PluginKey,Selection,type Transaction} from '@milkdown/kit/prose/state';
 import {Decoration,DecorationSet} from '@milkdown/kit/prose/view';
 import {closeHistory} from '@milkdown/kit/prose/history';
+import {Fragment} from '@milkdown/kit/prose/model';
+import {NodeSelection,TextSelection} from '@milkdown/kit/prose/state';
+import {findWrapping} from '@milkdown/kit/prose/transform';
+
+export interface BlockActionTarget {from:number;to:number;parent:ProseNode;parentStart:number;startIndex:number;endIndex:number;nodeSelection:boolean}
+export function selectionBlocks(state:EditorState,position?:number):BlockActionTarget|null{
+ const s=state.selection;
+ if(position!==undefined){const node=state.doc.nodeAt(position);if(node?.isBlock){const resolved=state.doc.resolve(position);return {from:position,to:position+node.nodeSize,parent:resolved.parent,parentStart:resolved.start(),startIndex:resolved.index(),endIndex:resolved.index()+1,nodeSelection:true};}}
+ if(s instanceof NodeSelection&&s.node.isBlock){const p=s.$from;return {from:s.from,to:s.to,parent:p.parent,parentStart:p.start(),startIndex:p.index(),endIndex:p.index()+1,nodeSelection:true};}
+ const unit=(pos:number)=>{const p=state.doc.resolve(pos);let depth=0;for(let d=p.depth;d>0;d--)if(p.node(d).type.name==='list_item'){depth=d;break;}if(!depth)for(let d=p.depth;d>0;d--)if(p.node(d).isTextblock){depth=d;break;}if(!depth)return null;return {from:p.before(depth),to:p.after(depth),parent:p.node(depth-1),start:p.start(depth-1),index:p.index(depth-1)};};
+ const a=unit(s.from),end=s.to>s.from&&s.$to.parentOffset===0?Math.max(s.from,s.to-2):s.to,b=unit(end);if(!a||!b||a.start!==b.start||a.parent!==b.parent)return null;
+ return {from:a.from,to:b.to,parent:a.parent,parentStart:a.start,startIndex:a.index,endIndex:b.index+1,nodeSelection:s instanceof NodeSelection};
+}
+export function moveBlocksTransaction(state:EditorState,direction:-1|1,position?:number){
+ const t=selectionBlocks(state,position);if(!t||direction<0&&t.startIndex===0||direction>0&&t.endIndex===t.parent.childCount)return null;
+ const nodes:ProseNode[]=[];t.parent.forEach(node=>nodes.push(node));const selected=nodes.slice(t.startIndex,t.endIndex),other=nodes[direction<0?t.startIndex-1:t.endIndex];
+ const from=direction<0?t.from-other.nodeSize:t.from,to=direction>0?t.to+other.nodeSize:t.to,delta=direction*other.nodeSize;
+ const tr=closeHistory(state.tr.replaceWith(from,to,Fragment.fromArray(direction<0?[...selected,other]:[other,...selected])));
+ if(t.nodeSelection)tr.setSelection(NodeSelection.create(tr.doc,state.selection.from+delta));else tr.setSelection(TextSelection.create(tr.doc,state.selection.from+delta,state.selection.to+delta));
+ return tr.setMeta('salmon-open-block',t.nodeSelection).scrollIntoView();
+}
+export function deleteSelectionBlocks(state:EditorState){
+ const t=selectionBlocks(state);if(!t)return null;let from=t.from,to=t.to;
+ const list=['bullet_list','ordered_list'].includes(t.parent.type.name);
+ if(list&&t.startIndex===0&&t.endIndex===t.parent.childCount){from=t.parentStart-1;to=from+t.parent.nodeSize;}
+ const tr=closeHistory(state.tr.delete(from,to));if(!tr.doc.childCount)tr.insert(0,state.schema.nodes.paragraph.create());
+ return tr.setSelection(Selection.near(tr.doc.resolve(Math.min(from,tr.doc.content.size)))).scrollIntoView();
+}
+export function groupSelectionTransaction(state:EditorState){
+ const t=selectionBlocks(state),type=state.schema.nodes.salmon_group;if(!t||!type)return null;const attrs={attributes:{preset:'outline',styleVersion:'2'}};
+ if(['bullet_list','ordered_list'].includes(t.parent.type.name)){
+  const items:ProseNode[]=[];t.parent.forEach(node=>items.push(node));const list=(children:ProseNode[],offset:number)=>t.parent.type.create({...t.parent.attrs,...(typeof t.parent.attrs.order==='number'?{order:t.parent.attrs.order+offset}:{})},children);
+  const nodes:ProseNode[]=[];if(t.startIndex)nodes.push(list(items.slice(0,t.startIndex),0));nodes.push(type.create(attrs,list(items.slice(t.startIndex,t.endIndex),t.startIndex)));if(t.endIndex<items.length)nodes.push(list(items.slice(t.endIndex),t.endIndex));
+  const pos=t.parentStart-1,resolved=state.doc.resolve(pos),fragment=Fragment.fromArray(nodes);if(!resolved.parent.canReplace(resolved.index(),resolved.index()+1,fragment))return null;
+  return closeHistory(state.tr.replaceWith(pos,pos+t.parent.nodeSize,fragment)).scrollIntoView();
+ }
+ const range=state.doc.resolve(t.from).blockRange(state.doc.resolve(t.to));if(!range)return null;const wrapping=findWrapping(range,type,attrs);return wrapping?closeHistory(state.tr.wrap(range,wrapping)).scrollIntoView():null;
+}
 
 interface TabState {active:number;id:string}
 export const visualTabsKey=new PluginKey<Map<number,TabState>>('salmon-visual-tabs');
