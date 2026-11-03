@@ -133,6 +133,7 @@ async function runSmoke(){
   await win.webContents.executeJavaScript("Array.from(document.querySelectorAll('.admin-account-nav button')).find(button=>button.textContent==='更新').click()");
   await win.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 400))');await capture('desktop-updates');
   assert.equal((await win.webContents.executeJavaScript('window.salmonDesktop.updateStatus()')).currentVersion,app.getVersion());
+  await require('./smoke-editor.cjs')(win,api,id);
   console.log('Browser editor, image picker, saved draft, and automatic local synchronization passed. Screenshot: '+screenshot);
   console.log(JSON.stringify({desktopSmoke:'passed',runtime:process.versions,standalone:true,unauthorizedStatus:403}));
 }
@@ -143,7 +144,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
       await startServer();
       const partition=session.fromPartition('persist:salmon-writer');
       partition.webRequest.onBeforeSendHeaders({urls:[origin+'/*']},(details,callback)=>{details.requestHeaders['x-salmon-desktop-token']=token;callback({requestHeaders:details.requestHeaders});});
-      partition.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
+      partition.setPermissionRequestHandler((contents,permission,callback)=>callback(permission==='fullscreen'&&!!contents?.getURL().startsWith(origin+'/')));
       ipcMain.handle('salmon:choose-directory',async event=>{trusted(event);const result=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:'选择内容库目录',properties:['openDirectory','createDirectory']});return result.canceled?null:result.filePaths[0];});
       ipcMain.handle('salmon:default-directory',event=>{trusted(event);return path.join(app.getPath('userData'),'content');});
       const localApi=async(route,body)=>{const response=await fetch(origin+'/api/admin/sync/'+route,{method:'POST',headers:{'x-salmon-desktop-token':token,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body||{})});const data=await response.json();if(!response.ok)throw new Error(data.error||'网站连接失败');return data;};

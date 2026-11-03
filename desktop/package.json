@@ -1,7 +1,7 @@
 {
   "name": "salmon-isle-writer",
   "productName": "Salmon Isle Writer",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
@@ -36,6 +36,7 @@
     },
     "files": [
       "main.cjs",
+      "smoke-editor.cjs",
       "preload.cjs",
       "utility.cjs",
       "icon.ico",
