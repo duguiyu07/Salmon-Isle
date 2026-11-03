@@ -6,7 +6,7 @@ const {randomBytes}=require('node:crypto');
 
 let server,origin='',token='',logFile='',installingUpdate=false;
 const smoke=process.argv.includes('--smoke');
-if(smoke&&process.env.SALMON_DESKTOP_DATA_DIR)app.setPath('userData',path.join(path.resolve(process.env.SALMON_DESKTOP_DATA_DIR),'electron-profile'));
+if(smoke&&process.env.SALMON_DESKTOP_DATA_DIR){const data=path.resolve(process.env.SALMON_DESKTOP_DATA_DIR);app.setPath('userData',path.join(path.dirname(data),path.basename(data)+'-electron-profile'));}
 const runtime=()=>process.env.SALMON_DESKTOP_DATA_DIR||path.join(app.getPath('userData'),'runtime');
 function log(value){if(logFile)fs.appendFileSync(logFile,new Date().toISOString()+' '+String(value)+'\n');}
 async function availablePort(){return new Promise((resolve,reject)=>{const socket=net.createServer();socket.on('error',reject);socket.listen(0,'127.0.0.1',()=>{const {port}=socket.address();socket.close(()=>resolve(port));});});}
