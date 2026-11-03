@@ -28,6 +28,17 @@ test('offline drafts coalesce durably, synchronize idempotently and publish only
 });
 test('an interrupted local write rolls back before synchronization and preserves the last draft',()=>{enter('client');withWorkspace(()=>{const file='editor-drafts/'+randomUUID()+'.json';prepareChange([file]);atomicWrite(path.join(workspaceRoot(),file),'interrupted');recoverChanges();assert.equal(fs.existsSync(path.join(workspaceRoot(),file)),false);});});
 
+test('offline draft coalescing never crosses a dependent folder rename',async()=>{
+ enter('server');const identity=libraryIdentity();enter('client');const id=randomUUID();let folder:any,saved:any;
+ await withWorkspace(async()=>{
+  await localMutation('structural',undefined,()=>folder=saveFolder({name:'旧目录'}));
+  await localMutation('draft',id,()=>saved=saveEditorDraft(id,{title:'离线移动',body:'first',folderId:folder.id},{baseVersion:null,draftVersion:null}),draftPaths(id,{title:'离线移动',folderId:folder.id}));
+  await localMutation('structural',undefined,()=>folder=saveFolder({...folder,name:'新目录'}));
+  await localMutation('draft',id,()=>saved=saveEditorDraft(id,{title:'离线移动',body:'after rename',folderId:folder.id},{baseVersion:saved.draft.baseVersion,draftVersion:saved.draft.draftVersion}),draftPaths(id,{title:'离线移动',folderId:folder.id}));
+ });
+ const operations=syncDb().prepare('SELECT payload FROM sync_outbox ORDER BY rowid').all().map(row=>({...JSON.parse(String(row.payload)),...identity}) as SyncOperation);assert.deepEqual(operations.map(operation=>operation.kind),['structural','draft','structural','draft']);enter('server');withWorkspace(()=>{for(const operation of operations)applyServerOperation(operation);assert.equal(readEditorDraft(id)?.document.body,'after rename');assert.match(findArticle(id)!.path,/新目录/);});
+});
+
 test('renames transfer only metadata and source bytes are frozen before a cyclic move',()=>{enter('client');withWorkspace(()=>{
  const library=workspaceRoot(),first='media/first.bin',second='media/second.bin';atomicWrite(path.join(library,first),Buffer.from([1,2,3]));atomicWrite(path.join(library,second),Buffer.from([4,5,6]));const before=snapshot();
  atomicWrite(path.join(library,first),Buffer.from([4,5,6]));atomicWrite(path.join(library,second),Buffer.from([1,2,3]));const patch=difference(before,snapshot());assert.equal(patch.files.length,2);assert.ok(patch.files.every(file=>file.source&&!file.data&&!file.blob));
