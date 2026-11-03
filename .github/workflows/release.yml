@@ -15,14 +15,15 @@ jobs:
         with:
           node-version: '24.22.1'
           cache: npm
-      - name: Validate release version before running tests
+      - name: Validate release version
         env:
           RELEASE_REF_TYPE: ${{ github.ref_type }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
         run: node scripts/check-release-version.mjs
       - run: npm ci
-      - name: Verify updater loads with root dependencies only
-        run: node -e "if(require('node:fs').existsSync('desktop/node_modules'))throw new Error('verify must use root dependencies only');require('./desktop/updates.cjs')"
+      - name: Verify updater dependencies
+        run: |
+          node -e "if(require('node:fs').existsSync('desktop/node_modules'))throw new Error('verify must use root dependencies only');require('./desktop/updates.cjs')"
       - run: npm run check
       - run: npm test
       - run: npm run build
@@ -32,8 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build and publish website
-        shell: bash
+      - name: Build and publish versioned website
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -54,12 +54,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run desktop:install
-      - name: Verify Electron runtime before build
+      - name: Verify Electron runtime
         run: |
-          node -e "const fs=require('node:fs');const p='desktop/node_modules/electron';const expected=require('./'+p+'/package.json').version;const installed=fs.readFileSync(p+'/dist/version','utf8').trim().replace(/^v/,'');if(installed!==expected)throw Error('Electron runtime version mismatch');fs.accessSync(p+'/dist/electron.exe');console.log('Electron runtime ready: '+installed)"
+          node -e "const fs=require('node:fs');const p='desktop/node_modules/electron';const expected=require('./'+p+'/package.json').version;const installed=fs.readFileSync(p+'/dist/version','utf8').trim().replace(/^v/,'');if(installed!==expected)throw Error('Electron runtime version mismatch');fs.accessSync(p+'/dist/electron.exe');console.log('Electron runtime ready '+installed)"
       - run: npm run check
       - run: npm test
-      - name: Build desktop
+      - name: Build desktop and release files
         shell: pwsh
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
@@ -82,41 +82,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run test:upgrade
-      - name: Publish release
+      - name: Upload draft release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version=(Get-Content package.json | ConvertFrom-Json).version
           if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and package version differ'}
-          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz) } | ForEach-Object { $_.FullName }
+          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz)$') -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','升级到2.0.md') } | ForEach-Object { $_.FullName }
           gh release view "v$version" *> $null
           if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
-
   publish:
     needs: [verify, website, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Publish complete release and website latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="$(node -p "require('./package.json').version")"
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker buildx imagetools create --tag "$image:latest" "$image:$version"
-          gh release edit "v$version" --draft=false --latest
-) -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','升级到2.0.md') } | ForEach-Object { $_.FullName }
-          gh release view "v$version" *> $null
-          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
-
-  publish:
-    needs: [verify, website, desktop]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Publish complete release and website latest
+      - name: Publish complete release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
