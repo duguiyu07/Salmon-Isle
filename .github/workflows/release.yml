@@ -89,7 +89,7 @@ jobs:
         run: |
           $version=(Get-Content package.json | ConvertFrom-Json).version
           if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and package version differ'}
-          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz)$') -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','升级到2.0.md') } | ForEach-Object { $_.FullName }
+          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz)$') -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','Salmon-Isle-Upgrade-2.0.zh-CN.md') } | ForEach-Object { $_.FullName }
           gh release view "v$version" *> $null
           if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
   publish:
