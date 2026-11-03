@@ -14,16 +14,17 @@ Electron 45 改为首次运行时按需下载二进制文件，npm ci 只安装 
 - 继续使用 Electron 包自带的下载及校验逻辑，不关闭校验，不改用未锁定版本。
 
 修复同步到 `E:\projects\salmon-isle-v2\publish-workspace`，版本统一为 **1.1.4**。
-在 PowerShell 中执行，每步成功后再继续：
+随后已修正第 59 行的 YAML 引号问题，并增加源码打包前的完整 workflow YAML 检查。
+本次只修复工作流语法，版本继续保持 1.1.4。在 PowerShell 中执行：
 
 ```powershell
 cd E:\projects\salmon-isle-v2\publish-workspace
 git add --all
-git commit -m "Install Electron runtime explicitly before packaging"
+git commit -m "Fix workflow YAML quoting and validate source workflows"
 git push origin main
-git tag v1.1.4
-git push origin v1.1.4
 ```
 
+提交成功后，打开仓库 **Actions → Release desktop and website → Run workflow**，分支选择 **main**，再点击 Run workflow。
+这里使用 main 上修正后的工作流，不创建新标签，也不重跑旧提交的失败任务。
 新任务的 Desktop 阶段应先出现 `Electron runtime ready: 45.2.1`，然后进入构建。
 保留已存在的标签及镜像；本次不改变网站数据。

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {zipSync, unzipSync} from 'fflate';
+import {parseDocument} from 'yaml';
 
 const directories = ['src', 'scripts', 'tests', 'docs', 'public', 'desktop', '.github', 'deploy'];
 const files = ['package.json', 'package-lock.json', 'tsconfig.json', 'next.config.ts', 'next-env.d.ts',
@@ -21,7 +22,14 @@ export function sourcePackage(root: string, version: string) {
     const file = path.join(root, relative), stat = fs.lstatSync(file);
     if (stat.isSymbolicLink()) throw new Error('源码包不允许符号链接：' + relative);
     if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) add(path.posix.join(relative, name));
-    else entries[prefix + relative] = fs.readFileSync(file);
+    else {
+      const bytes = fs.readFileSync(file);
+      if (relative.startsWith('.github/workflows/') && /\.ya?ml$/i.test(relative)) {
+        const document = parseDocument(bytes.toString('utf8'));
+        if (document.errors.length) throw new Error('工作流 YAML 语法错误：' + relative + '\n' + document.errors.map(error => error.message).join('\n'));
+      }
+      entries[prefix + relative] = bytes;
+    }
   }
   for (const dir of directories) add(dir);
   for (const file of files) if (fs.existsSync(path.join(root, file))) add(file);

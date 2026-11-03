@@ -135,4 +135,9 @@ test('public source package includes deployment and license while excluding nest
   assert.ok(names.some(file => file.endsWith('/.env.example'))); assert.ok(names.some(file => file.endsWith('/.gitattributes')));
   assert.doesNotMatch(names.join('\n'), /private|backups|\.env\.local/);
   assert.equal(Object.values(zip).some(bytes => Buffer.from(bytes).includes('PRIVATE')), false);
+  fs.mkdirSync(path.join(repo, '.github/workflows'));
+  fs.writeFileSync(path.join(repo, '.github/workflows/release.yml'), 'steps:\n  - run: node -e "console.log(\'ready: ok\')"\n');
+  assert.throws(() => sourcePackage(repo, '1.1.0'), /工作流 YAML 语法错误/);
+  fs.writeFileSync(path.join(repo, '.github/workflows/release.yml'), 'steps:\n  - run: |\n      node -e "console.log(\'ready: ok\')"\n');
+  assert.ok(sourcePackage(repo, '1.1.0').paths.some(file => file.endsWith('/.github/workflows/release.yml')));
 });

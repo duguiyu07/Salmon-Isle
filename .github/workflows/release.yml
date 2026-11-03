@@ -56,7 +56,8 @@ jobs:
       - run: npm ci
       - run: npm run desktop:install
       - name: Verify Electron runtime before build
-        run: node -e "const fs=require('node:fs');const p='desktop/node_modules/electron';const expected=require('./'+p+'/package.json').version;const installed=fs.readFileSync(p+'/dist/version','utf8').trim().replace(/^v/,'');if(installed!==expected)throw Error('Electron runtime version mismatch');fs.accessSync(p+'/dist/electron.exe');console.log('Electron runtime ready: '+installed)"
+        run: |
+          node -e "const fs=require('node:fs');const p='desktop/node_modules/electron';const expected=require('./'+p+'/package.json').version;const installed=fs.readFileSync(p+'/dist/version','utf8').trim().replace(/^v/,'');if(installed!==expected)throw Error('Electron runtime version mismatch');fs.accessSync(p+'/dist/electron.exe');console.log('Electron runtime ready: '+installed)"
       - run: npm run check
       - run: npm test
       - name: Build desktop
