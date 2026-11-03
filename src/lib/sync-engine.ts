@@ -29,7 +29,7 @@ async function remote(route:string,options:RequestInit={},connection=syncConnect
  if(!response.ok){const value=await response.json().catch(()=>({}));throw new AppError(value.error||'同步失败',response.status);}return response;
 }
 export async function connectSite(input:{siteUrl:string;password:string;replace?:boolean}){
- beginDirectLibrary();const url=siteUrl(input.siteUrl);let response:Response;
+ beginDirectLibrary();await worker().running?.catch(()=>{});const url=siteUrl(input.siteUrl);let response:Response;
  try{response=await fetch(url+'/api/sync/v1/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:input.password,replace:!!input.replace}),signal:AbortSignal.timeout(20000)});}catch{throw new AppError('无法连接网站，请检查地址和网络',503);}
  const data=await response.json().catch(()=>({}));if(!response.ok)throw new AppError(data.error||'网站需要先升级至 2.0',response.status);if(data.protocol!==1)throw new AppError('请先升级网站至兼容版本',426);
  const connection:SyncConnection={siteUrl:url,deviceId:data.deviceId,libraryId:data.libraryId,generation:data.generation,cursor:0};
@@ -87,26 +87,57 @@ export function applyServerOperation(operation:SyncOperation):SyncReceipt{
  }catch(error){recoverChanges();invalidateLibraryCache();throw error;}
 }
 async function sendOutbox(){
- const connection=syncConnection();if(!connection)throw new AppError('请先连接网站',401);
- for(const row of syncDb().prepare('SELECT id,payload FROM sync_outbox ORDER BY created,rowid').all() as {id:string;payload:string}[]){
-  const operation=JSON.parse(row.payload) as SyncOperation;syncDb().prepare("UPDATE sync_outbox SET state='sent' WHERE id=?").run(row.id);
-  for(const file of operation.patch?.files||[])if(file.blob){try{await remote('media/'+file.hash,{method:'HEAD'});}catch(error){if((error as AppError).status!==404)throw error;await remote('media/'+file.hash,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:new Uint8Array(fs.readFileSync(blobPath(file.hash)))});}}
-  const receipt:SyncReceipt=await (await remote('operations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(operation)})).json();
-  if(receipt.patch){const journal=prepareChange([...new Set([...receipt.patch.files.map(file=>file.path),...receipt.patch.deleted])]);try{applyPatch(receipt.patch);invalidateLibraryCache();withWorkspace(()=>reindex());finishChange(journal.id);}catch(error){recoverChanges();throw error;}}
-  syncDb().prepare('DELETE FROM sync_outbox WHERE id=?').run(row.id);connection.cursor=receipt.cursor;saveConnection(connection);
+ const connection=syncConnection(),secret=worker().secret;if(!connection)throw new AppError('请先连接网站',401);
+ const sameConnection=()=>syncConnection()?.deviceId===connection.deviceId&&worker().secret===secret;
+ while(sameConnection()){
+  // Network IO must never own the library lock. Freeze just one outgoing row,
+  // then let autosave keep writing/coalescing subsequent operations independently.
+  const row=await withRepositoryLock(()=>{const row=syncDb().prepare('SELECT id,payload FROM sync_outbox ORDER BY rowid LIMIT 1').get() as {id:string;payload:string}|undefined;if(row)syncDb().prepare("UPDATE sync_outbox SET state='sent' WHERE id=?").run(row.id);return row;});
+  if(!row)break;const operation=JSON.parse(row.payload) as SyncOperation;
+  for(const file of operation.patch?.files||[])if(file.blob){try{await remote('media/'+file.hash,{method:'HEAD'},connection,secret);}catch(error){if((error as AppError).status!==404)throw error;await remote('media/'+file.hash,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:new Uint8Array(fs.readFileSync(blobPath(file.hash))),signal:AbortSignal.timeout(180000)},connection,secret);}}
+  const receipt:SyncReceipt=await (await remote('operations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(operation)},connection,secret)).json();
+  await withRepositoryLock(()=>{
+   if(!sameConnection())return;
+   if(receipt.patch){
+    const draftPath=operation.target?'editor-drafts/'+operation.target+'.json':null;
+    const local=operation.target?readEditorDraft(operation.target):null;
+    const preserve=local&&local.draftVersion!==operation.tokens?.draftVersion?local:null;
+    const patch=preserve&&draftPath?{files:receipt.patch.files.filter(file=>file.path!==draftPath),deleted:receipt.patch.deleted.filter(file=>file!==draftPath)}:receipt.patch;
+    const journal=prepareChange([...new Set([...receipt.patch.files.map(file=>file.path),...receipt.patch.deleted,...(draftPath?[draftPath]:[])])]);
+    try{
+     applyPatch(patch);invalidateLibraryCache();
+     if(preserve&&draftPath&&operation.target){
+      const article=findArticle(operation.target);if(!article)throw new AppError('发布后文章不存在',409);
+      preserve.baseVersion=article.version;preserve.baseDocument={...articleMeta(article),body:article.body,folderId:article.folderId};preserve.document.status=article.status;atomicWrite(path.join(workspaceRoot(),draftPath),JSON.stringify(preserve));
+      const updated=snapshot(workspaceRoot(),[draftPath])[0];
+      for(const pending of syncDb().prepare("SELECT id,payload FROM sync_outbox WHERE kind='draft' AND target=? AND state='pending'").all(operation.target)){
+       const next=JSON.parse(String(pending.payload)) as SyncOperation;next.patch!.files=next.patch!.files.map(file=>file.path===draftPath?updated:file);syncDb().prepare('UPDATE sync_outbox SET payload=? WHERE id=?').run(JSON.stringify(next),pending.id);
+      }
+     }
+     reindex();finishChange(journal.id);
+    }catch(error){recoverChanges();throw error;}
+   }
+   syncDb().prepare('DELETE FROM sync_outbox WHERE id=?').run(row.id);connection.cursor=receipt.cursor;saveConnection(connection);
+  });
  }
  worker().lastSyncedAt=new Date().toISOString();
 }
 async function pullChanges(){const connection=syncConnection();if(!connection)return;const data=await(await remote('changes?after='+connection.cursor)).json();if(data.libraryId!==connection.libraryId||data.generation!==connection.generation)throw new AppError('服务器内容库已恢复，请重新连接；本地改动会保留',409);
  if(data.settings)atomicWrite(path.join(runtimeDir(),'site.yml'),data.settings);connection.cursor=data.cursor;saveConnection(connection);
 }
-export async function flushSync(){const state=worker();state.blocked=false;if(state.running)await state.running;const task=withRepositoryLock(()=>withWorkspace(sendOutbox));state.running=task;try{await task;state.error=undefined;state.offline=false;state.retry=0;}catch(error){state.error=(error as Error).message;state.offline=(error as AppError).status>=500;state.blocked=[400,401,403,409,413,422].includes((error as AppError).status);throw error;}finally{if(state.running===task)state.running=undefined;}}
+export async function flushSync(){
+ const state=worker();if(state.running){await state.running;if((syncDb().prepare('SELECT COUNT(*) AS n FROM sync_outbox').get() as {n:number}).n)return flushSync();return;}
+ state.blocked=false;const device=syncConnection()?.deviceId;
+ let task!:Promise<void>;task=(async()=>{try{await withWorkspace(sendOutbox);if(syncConnection()?.deviceId===device){state.error=undefined;state.offline=false;state.retry=0;}}catch(error){if(syncConnection()?.deviceId===device){state.error=(error as Error).message;state.offline=(error as AppError).status>=500;state.blocked=[400,401,403,409,413,422].includes((error as AppError).status);}throw error;}finally{if(state.running===task)state.running=undefined;}})();
+ state.running=task;return task;
+}
 export async function publishFromDesktop(id:string,tokens:DraftTokens,withdraw=false){
  const connection=syncConnection();if(!connection)throw new AppError('请先连接网站，联网后发布',409);
+ const kind=withdraw?'unpublish':'publish',previous=syncDb().prepare('SELECT payload FROM sync_outbox WHERE kind=? AND target=? LIMIT 1').get(kind,id) as {payload:string}|undefined;
  await remote('identity');await flushSync();
- const kind=withdraw?'unpublish':'publish';const existing=syncDb().prepare('SELECT payload FROM sync_outbox WHERE kind=? AND target=? LIMIT 1').get(kind,id) as {payload:string}|undefined;
- const operation:SyncOperation=existing?JSON.parse(existing.payload):{id:randomUUID(),kind,target:id,tokens,libraryId:connection.libraryId,generation:connection.generation};
- if(!existing)syncDb().prepare('INSERT INTO sync_outbox(id,kind,target,payload,created) VALUES(?,?,?,?,?)').run(operation.id,kind,id,JSON.stringify(operation),Date.now());
+ if(syncConnection()?.deviceId!==connection.deviceId)throw new AppError('连接已改变，请在同步页确认发布状态',409);
+ if(previous&&(JSON.parse(previous.payload) as SyncOperation).tokens?.draftVersion===tokens.draftVersion){const article=findArticle(id);if(!article)throw new AppError('文章不存在',404);return withdraw?{article,draft:readEditorDraft(id)}:article;}
+ await withRepositoryLock(()=>{const draft=readEditorDraft(id);if(!draft||draft.draftVersion!==tokens.draftVersion||!previous&&draft.baseVersion!==tokens.baseVersion)throw new AppError('内容已更新，当前输入已保留，请重新载入',409);const operation:SyncOperation={id:randomUUID(),kind,target:id,tokens:{baseVersion:draft.baseVersion,draftVersion:draft.draftVersion},libraryId:connection.libraryId,generation:connection.generation};syncDb().prepare('INSERT INTO sync_outbox(id,kind,target,payload,created) VALUES(?,?,?,?,?)').run(operation.id,kind,id,JSON.stringify(operation),Date.now());});
  await flushSync();const article=withWorkspace(()=>findArticle(id));if(!article)throw new AppError('文章不存在',404);
  if(withdraw){const {readEditorDraft}=await import('./editor-drafts');return {article,draft:withWorkspace(()=>readEditorDraft(id))};}return article;
 }

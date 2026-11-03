@@ -7,13 +7,13 @@
 在现有 Docker 部署目录中执行：
 
 ```sh
-sh scripts/update-site.sh --image ghcr.io/duguiyu07/salmon-isle:2.0.1
+sh scripts/update-site.sh --image ghcr.io/duguiyu07/salmon-isle:2.0.2
 ```
 
 Windows Docker 主机使用：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/update-site.ps1 -Image ghcr.io/duguiyu07/salmon-isle:2.0.1
+powershell -ExecutionPolicy Bypass -File scripts/update-site.ps1 -Image ghcr.io/duguiyu07/salmon-isle:2.0.2
 ```
 
 首次跨版本升级请先下载本次 Release 的服务器包，把包内 scripts/update-site.sh（Windows 使用源码包中的 update-site.ps1）覆盖到部署目录的 scripts/，再运行上面的命令。服务器包不包含个人内容。
@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File scripts/update-site.ps1 -Image ghcr.io/
 
 如果旧版无法启动、更新源不可用或使用 ZIP 版：
 
-1. 从本次 Release 下载 Salmon-Isle-Writer-2.0.1-x64.exe。
+1. 从本次 Release 下载 Salmon-Isle-Writer-2.0.2-x64.exe。
 2. 退出旧版，直接运行新版安装程序，选择原安装位置覆盖安装。
 3. 无需先卸载。程序标识及用户数据目录保持一致，原本地内容、恢复稿和更新配置会保留。
 

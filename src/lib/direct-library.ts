@@ -36,9 +36,10 @@ export function snapshot(root=workspaceRoot(),paths?:string[]):SyncFile[]{
   const bytes=fs.readFileSync(absolute);return {path:file,hash:digest(bytes),data:bytes.toString('base64')};
  });
 }
-export function difference(before:SyncFile[],after:SyncFile[]):SyncPatch{const previous=new Map(before.map(file=>[file.path,file.hash]));const current=new Set(after.map(file=>file.path));return {files:after.filter(file=>previous.get(file.path)!==file.hash),deleted:before.filter(file=>!current.has(file.path)).map(file=>file.path)};}
+export function difference(before:SyncFile[],after:SyncFile[]):SyncPatch{const previous=new Map(before.map(file=>[file.path,file.hash])),sources=new Map(before.map(file=>[file.hash,file.path]));const current=new Set(after.map(file=>file.path));return {files:after.filter(file=>previous.get(file.path)!==file.hash).map(file=>{const source=sources.get(file.hash);return source&&source!==file.path?{path:file.path,hash:file.hash,source}:file;}),deleted:before.filter(file=>!current.has(file.path)).map(file=>file.path)};}
 export function applyPatch(patch:SyncPatch,root=workspaceRoot()){
- for(const file of patch.files){managed(file.path);const bytes=file.blob?fs.readFileSync(blobPath(file.hash)):Buffer.from(file.data||'','base64');if(digest(bytes)!==file.hash)throw new AppError('文件校验失败');atomicWrite(within(root,file.path),bytes);}
+ const sources=new Map<string,Buffer>();for(const file of patch.files)if(file.source){managed(file.source);const bytes=fs.readFileSync(within(root,file.source));if(digest(bytes)!==file.hash)throw new AppError('移动源文件校验失败',409);sources.set(file.path,bytes);}
+ for(const file of patch.files){managed(file.path);const bytes=sources.get(file.path)||(file.blob?fs.readFileSync(blobPath(file.hash)):Buffer.from(file.data||'','base64'));if(digest(bytes)!==file.hash)throw new AppError('文件校验失败');atomicWrite(within(root,file.path),bytes);}
  for(const file of patch.deleted){managed(file);const target=within(root,file);if(fs.existsSync(target)&&fs.statSync(target).isFile())fs.unlinkSync(target);}
  // Empty directories otherwise leave phantom folders after moves and trash operations.
  const prune=(dir:string)=>{if(!fs.existsSync(dir))return;for(const item of fs.readdirSync(dir,{withFileTypes:true}))if(item.isDirectory()&&!item.isSymbolicLink()){const child=path.join(dir,item.name);prune(child);if(!fs.readdirSync(child).length)fs.rmdirSync(child);}};
