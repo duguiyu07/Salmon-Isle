@@ -3,7 +3,7 @@ import path from 'node:path';
 import {zipSync, unzipSync} from 'fflate';
 import {parseDocument} from 'yaml';
 
-const directories = ['src', 'scripts', 'tests', 'docs', 'public', 'desktop', '.github', 'deploy'];
+const directories = ['src', 'scripts', 'tests', 'docs', 'public', '.github', 'deploy'];
 const files = ['package.json', 'package-lock.json', 'tsconfig.json', 'next.config.ts', 'next-env.d.ts',
   'postcss.config.mjs', 'Dockerfile', 'compose.yml', '.dockerignore', '.gitignore', '.gitattributes', '.env.example',
   'README.md', 'AGENTS.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
@@ -24,6 +24,9 @@ export function sourcePackage(root: string, version: string) {
     if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) add(path.posix.join(relative, name));
     else {
       const bytes = fs.readFileSync(file);
+      if (relative.endsWith('.sh') && (bytes.includes(0x0d) || bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])))) {
+        throw new Error('Shell 脚本必须使用无 BOM 的 LF 换行：' + relative);
+      }
       if (relative.startsWith('.github/workflows/') && /\.ya?ml$/i.test(relative)) {
         const document = parseDocument(bytes.toString('utf8'));
         if (document.errors.length) throw new Error('工作流 YAML 语法错误：' + relative + '\n' + document.errors.map(error => error.message).join('\n'));

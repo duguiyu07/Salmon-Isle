@@ -1,9 +1,7 @@
 import fs from 'node:fs';
 
 const root = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const desktop = JSON.parse(fs.readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'));
-if (root.version !== desktop.version) throw new Error('根项目和 desktop 的版本必须一致');
-for (const file of ['package-lock.json', 'desktop/package-lock.json']) {
+for (const file of ['package-lock.json']) {
   const lock = JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
   if (lock.version !== root.version || lock.packages[''].version !== root.version) throw new Error(file + ' 的版本必须与程序版本一致');
 }

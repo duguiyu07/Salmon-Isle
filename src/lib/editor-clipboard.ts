@@ -2,6 +2,7 @@ import TurndownService from 'turndown';
 import {gfm} from 'turndown-plugin-gfm';
 import {MathMLToLaTeX} from 'mathml-to-latex';
 import {inlineSyntax} from './live-markdown';
+import {coloredText,inlineColors} from './inline-color';
 
 /** Read formula roots once, before a rich-text converter visits their descendants. */
 export function htmlClipboardMarkdown(html:string){
@@ -22,6 +23,7 @@ export function htmlClipboardMarkdown(html:string){
   root.querySelectorAll('.katex,mjx-container,.MathJax,math,script[type^="math/tex"]').forEach(element=>protect(element,/mode=display/.test(element.getAttribute('type')||'')));
   root.querySelectorAll('script,style,.katex-html,mjx-assistive-mml').forEach(element=>element.remove());
   const service=new TurndownService({headingStyle:'atx',codeBlockStyle:'fenced',emDelimiter:'*',strongDelimiter:'**',bulletListMarker:'-'});service.use(gfm);
+  service.addRule('inline-colors',{filter:node=>node.nodeName==='SPAN'&&((node as HTMLElement).hasAttribute('data-text-color')||(node as HTMLElement).hasAttribute('data-text-background')),replacement:(content,node)=>{const element=node as HTMLElement;return coloredText(content,inlineColors({color:element.getAttribute('data-text-color'),background:element.getAttribute('data-text-background')}));}});
   let markdown=service.turndown(template.innerHTML);
   for(const formula of formulas)markdown=markdown.split(formula.token).join(formula.block?`\n\n$$\n${formula.latex}\n$$\n\n`:`$${formula.latex}$`);
   return markdown;

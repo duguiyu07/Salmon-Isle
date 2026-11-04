@@ -4,12 +4,12 @@ import {randomUUID} from 'node:crypto';
 import {db} from './db';
 import {digest} from './crypto';
 import {atomicWrite,articleMeta,listArticles,listFolders,reindex,saveArticle,saveFolder} from './storage';
-import {activeRoot,isDesktop,runtimeDir,workspaceRoot,withLibrary,repositoryConfig} from './library-context';
+import {activeRoot,runtimeDir,workspaceRoot,withLibrary,repositoryConfig} from './library-context';
 import {libraryDirectories,libraryFiles,validateLibrary,validatePortablePath} from './library-validation';
 import {listMedia} from './media';
 import {within} from './paths';
 import {AppError} from './model';
-import type {SyncFile,SyncPatch} from './sync-model';
+import type {LibraryFile,LibraryPatch} from './file-journal-model';
 
 export const directRoot=()=>path.join(runtimeDir(),'library-v2');
 const directRegistry=globalThis as typeof globalThis&{salmonDirectInitialized?:Set<string>};
@@ -28,7 +28,7 @@ export function libraryIdentity(){return {libraryId:meta('libraryId'),generation
 export function blobPath(hash:string){if(!/^[a-f0-9]{64}$/.test(hash))throw new AppError('无效附件哈希');return path.join(runtimeDir(),'sync-blobs',hash);}
 export function keepBlob(bytes:Buffer){const hash=digest(bytes),file=blobPath(hash);if(!fs.existsSync(file))atomicWrite(file,bytes);return hash;}
 function managed(file:string){validatePortablePath(file);if(file!=='library.json'&&!libraryDirectories.some(dir=>file.startsWith(dir+'/')))throw new AppError('文件不属于内容库');}
-export function snapshot(root=workspaceRoot(),paths?:string[]):SyncFile[]{
+export function snapshot(root=workspaceRoot(),paths?:string[]):LibraryFile[]{
  const names=paths??libraryFiles(root).filter(file=>file==='library.json'||libraryDirectories.some(dir=>file.startsWith(dir+'/')));
  return names.filter(file=>{managed(file);return fs.existsSync(within(root,file))&&fs.statSync(within(root,file)).isFile();}).map(file=>{
   const absolute=within(root,file),manifest=path.join(path.dirname(absolute),'manifest.json');const blob=file.startsWith('media/')||file.startsWith('trash/')&&path.posix.basename(file)==='content'&&fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,'utf8')).kind==='media';
@@ -36,8 +36,7 @@ export function snapshot(root=workspaceRoot(),paths?:string[]):SyncFile[]{
   const bytes=fs.readFileSync(absolute);return {path:file,hash:digest(bytes),data:bytes.toString('base64')};
  });
 }
-export function difference(before:SyncFile[],after:SyncFile[]):SyncPatch{const previous=new Map(before.map(file=>[file.path,file.hash])),sources=new Map(before.map(file=>[file.hash,file.path]));const current=new Set(after.map(file=>file.path));return {files:after.filter(file=>previous.get(file.path)!==file.hash).map(file=>{const source=sources.get(file.hash);return source&&source!==file.path?{path:file.path,hash:file.hash,source}:file;}),deleted:before.filter(file=>!current.has(file.path)).map(file=>file.path)};}
-export function applyPatch(patch:SyncPatch,root=workspaceRoot()){
+export function applyPatch(patch:LibraryPatch,root=workspaceRoot()){
  const sources=new Map<string,Buffer>();for(const file of patch.files)if(file.source){managed(file.source);const bytes=fs.readFileSync(within(root,file.source));if(digest(bytes)!==file.hash)throw new AppError('移动源文件校验失败',409);sources.set(file.path,bytes);}
  for(const file of patch.files){managed(file.path);const bytes=sources.get(file.path)||(file.blob?fs.readFileSync(blobPath(file.hash)):Buffer.from(file.data||'','base64'));if(digest(bytes)!==file.hash)throw new AppError('文件校验失败');atomicWrite(within(root,file.path),bytes);}
  for(const file of patch.deleted){managed(file);const target=within(root,file);if(fs.existsSync(target)&&fs.statSync(target).isFile())fs.unlinkSync(target);}
@@ -47,7 +46,7 @@ export function applyPatch(patch:SyncPatch,root=workspaceRoot()){
 }
 export function prepareChange(paths?:string[]){const id=randomUUID(),before=snapshot(workspaceRoot(),paths);syncDb().prepare('INSERT INTO sync_journal VALUES(?,?,?)').run(id,JSON.stringify(before),paths?JSON.stringify(paths):null);return {id,before,paths};}
 export function finishChange(id:string){syncDb().prepare('DELETE FROM sync_journal WHERE id=?').run(id);}
-export function recoverChanges(){const rows=syncDb().prepare('SELECT * FROM sync_journal').all() as {id:string;before_state:string;paths:string|null}[];for(const row of rows){const before=JSON.parse(row.before_state) as SyncFile[],now=snapshot(workspaceRoot(),row.paths?JSON.parse(row.paths):undefined);applyPatch({files:before,deleted:now.filter(file=>!before.some(old=>old.path===file.path)).map(file=>file.path)});finishChange(row.id);}if(rows.length)withLibrary(workspaceRoot(),()=>reindex());}
+export function recoverChanges(){const rows=syncDb().prepare('SELECT * FROM sync_journal').all() as {id:string;before_state:string;paths:string|null}[];for(const row of rows){const before=JSON.parse(row.before_state) as LibraryFile[],now=snapshot(workspaceRoot(),row.paths?JSON.parse(row.paths):undefined);applyPatch({files:before,deleted:now.filter(file=>!before.some(old=>old.path===file.path)).map(file=>file.path)});finishChange(row.id);}if(rows.length)withLibrary(workspaceRoot(),()=>reindex());}
 export function beginDirectLibrary(){
  const marker=path.join(runtimeDir(),'direct-library.json'),restored=path.join(runtimeDir(),'sync-restored.json');if(fs.existsSync(marker)){if(fs.existsSync(restored)){setMeta('generation',randomUUID());setMeta('cursor','0');syncDb().exec('DELETE FROM sync_devices; DELETE FROM sync_receipts;');fs.unlinkSync(restored);}if(!initialized.has(runtimeDir())){recoverChanges();initialized.add(runtimeDir());}return;}
  const root=directRoot(),legacy=workspaceRoot(),live=activeRoot(),config=repositoryConfig();
@@ -81,5 +80,5 @@ export function beginDirectLibrary(){
  withLibrary(stage,()=>{const articles=listArticles();for(const file of fs.readdirSync(path.join(stage,'editor-drafts'))){const target=path.join(stage,'editor-drafts',file),draft=JSON.parse(fs.readFileSync(target,'utf8')),base=articles.find(item=>item.id===draft.articleId);if(base){draft.baseVersion=base.version;if(!listFolders().some(folder=>folder.id===draft.document.folderId))draft.document.folderId=base.folderId;atomicWrite(target,JSON.stringify(draft));}}});
  validateLibrary(stage);if(fs.existsSync(root))fs.rmSync(root,{recursive:true,force:true});fs.renameSync(stage,root);
  setMeta('libraryId',randomUUID());setMeta('generation',randomUUID());setMeta('cursor','0');
- atomicWrite(marker,JSON.stringify({version:2,root,time:new Date().toISOString(),desktop:isDesktop()}));if(fs.existsSync(restored))fs.unlinkSync(restored);withLibrary(root,()=>reindex());recoverChanges();initialized.add(runtimeDir());
+ atomicWrite(marker,JSON.stringify({version:2,root,time:new Date().toISOString()}));if(fs.existsSync(restored))fs.unlinkSync(restored);withLibrary(root,()=>reindex());recoverChanges();initialized.add(runtimeDir());
 }

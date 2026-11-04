@@ -1,4 +1,4 @@
-name: Release desktop and website
+name: Release website
 on:
   push:
     tags: ['v*']
@@ -21,9 +21,6 @@ jobs:
           RELEASE_REF_NAME: ${{ github.ref_name }}
         run: node scripts/check-release-version.mjs
       - run: npm ci
-      - name: Verify updater dependencies
-        run: |
-          node -e "if(require('node:fs').existsSync('desktop/node_modules'))throw new Error('verify must use root dependencies only');require('./desktop/updates.cjs')"
       - run: npm run check
       - run: npm test
       - run: npm run build
@@ -38,14 +35,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then echo "Tag and package version differ" >&2; exit 1; fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker build --build-arg SALMON_RELEASE_REPOSITORY="$GITHUB_REPOSITORY" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image:$version" .
           docker push "$image:$version"
-  desktop:
+  release:
     needs: website
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,47 +49,22 @@ jobs:
           node-version: '24.22.1'
           cache: npm
       - run: npm ci
-      - run: npm run desktop:install
-      - name: Verify Electron runtime
-        run: |
-          node -e "const fs=require('node:fs');const p='desktop/node_modules/electron';const expected=require('./'+p+'/package.json').version;const installed=fs.readFileSync(p+'/dist/version','utf8').trim().replace(/^v/,'');if(installed!==expected)throw Error('Electron runtime version mismatch');fs.accessSync(p+'/dist/electron.exe');console.log('Electron runtime ready '+installed)"
-      - run: npm run check
-      - run: npm test
-      - name: Build desktop and release files
-        shell: pwsh
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          SALMON_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
-        run: |
-          $env:SALMON_DESKTOP_UPDATE_URL="https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/"
-          npm run desktop:package
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          npm run release:source
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          npm run release:deployment
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          Copy-Item dist/deployment/public/Salmon-Isle-Server-*.tar.gz dist/desktop/
-          npm run release:metadata
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-      - name: Verify packaged desktop without system Git
-        run: npm run desktop:smoke -- --executable "dist/desktop/win-unpacked/Salmon Isle Writer.exe" --no-system-tools
-      - name: Verify overwrite upgrade from published 1.x
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run test:upgrade
+      - run: npm run release:deployment
+      - run: npm run release:metadata
       - name: Upload draft release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version=(Get-Content package.json | ConvertFrom-Json).version
-          if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and package version differ'}
-          $assets=Get-ChildItem dist/desktop -File | Where-Object { ($_.Name.Contains($version) -and $_.Name -match '\.(exe|zip|blockmap|tar\.gz)$') -or $_.Name -in @('latest.yml','release.json','SHA256SUMS.txt','Salmon-Isle-Upgrade-2.0.zh-CN.md') } | ForEach-Object { $_.FullName }
-          gh release view "v$version" *> $null
-          if($LASTEXITCODE -eq 0){gh release upload "v$version" @assets --clobber}else{gh release create "v$version" @assets --title "Salmon Isle $version" --draft --notes-file docs/release-2.0.zh-CN.md}
+          version="$(node -p "require('./package.json').version")"
+          base=dist/deployment/public
+          set -- "$base/Salmon-Isle-Source-$version.zip" "$base/Salmon-Isle-Server-$version.tar.gz" "$base/release.json" "$base/SHA256SUMS.txt" "$base/Salmon-Isle-Upgrade-2.2.zh-CN.md" "$base/source-package-report.json"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            gh release upload "v$version" "$@" --clobber
+          else
+            gh release create "v$version" "$@" --title "Salmon Isle $version" --draft --notes-file docs/release-2.2.1.zh-CN.md
+          fi
   publish:
-    needs: [verify, website, desktop]
+    needs: [verify, website, release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -14,6 +14,7 @@ playwright-report
 desktop
 dist
 deploy-secrets
+服务器ssh信息
 restored-data
 content-test
 deploy-input

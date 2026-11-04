@@ -37,8 +37,6 @@
   ],
   "exclude": [
     "node_modules",
-    "desktop/node_modules",
-    "desktop/web",
     "dist",
     "原网站内容",
     "data",

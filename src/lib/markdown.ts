@@ -16,17 +16,24 @@ import { isHtmlBlock } from './html-block';
 import { codeLanguage } from './code-languages';
 import { parseCodeMeta, lineRange, CodeOptions } from './code-block';
 import {remarkImageCaptions,renderImageCaptions} from './image-caption';
+import {inlineColors,inlineColorStyle} from './inline-color';
+import {createHash} from 'node:crypto';
+import {RenderCache} from './render-cache';
 export interface Heading { id: string; text: string; depth: number }
 
 function directives() {
-  return (tree: any,file:any) => visit(tree,(node: any) => {
+  return (tree: any,file:any) => visit(tree,(node: any,_index:any,parent:any) => {
+    node.inlineColorContext={...parent?.inlineColorContext,...(node.type==='textDirective'&&node.name==='text'?inlineColors(node.attributes||{}):{})};
     if (node.type !== 'containerDirective' && node.type !== 'leafDirective' && node.type !== 'textDirective') return;
-    if(node.type==='textDirective'&&node.name!=='spoiler'){
+    if(node.type==='textDirective'&&!['spoiler','text'].includes(node.name)){
       node.type='text';node.value=String(file.value).slice(node.position.start.offset,node.position.end.offset);delete node.children;return;
     }
     const a = node.attributes || {}; const data = node.data ||= {}; const style = blockStyle(a);
     const props: Record<string,unknown> = { ...(style ? {style} : {}) };
-    if (node.name === 'group') {
+    if(node.type==='textDirective'&&node.name==='text'){
+      const colors=inlineColors(a);data.hName='span';props.className=['inline-colored-text'];props.style=inlineColorStyle(node.inlineColorContext);
+      if(colors.color)props.dataTextColor=colors.color;if(colors.background)props.dataTextBackground=colors.background;
+    } else if (node.name === 'group') {
       data.hName = 'div'; props.className = groupClasses(a);
       if(groupBasePreset(a)==='shortcut'&&shortcutHref(a.href))props.dataShortcutHref=shortcutHref(a.href);
     } else if (node.name === 'details') {
@@ -77,14 +84,20 @@ const schema: any = {
     '*': [...(defaultSchema.attributes?.['*'] || []),'style'],
     div: ['className','style','dataShortcutHref'], section:['className','style','dataTabTitle'],
     details:['className','open','style'], summary:['className','style'],
-    span:['className','style','tabIndex'], mark:['style'],
+    span:['className','style','tabIndex','dataTextColor','dataTextBackground'], mark:['style'],
     code:[...(defaultSchema.attributes?.code || []),'dataCodeMeta',['className',/^language-/,/^math-/]],
     a:[...(defaultSchema.attributes?.a || []),'className'],
     img:[...(defaultSchema.attributes?.img || []),'width','height','loading'], figure:['className','style']
   },
   protocols: { ...defaultSchema.protocols, src:['http','https'], href:['http','https','mailto'] }
 };
-export async function renderMarkdown(markdown: string, options: {pageTitle?:boolean} = {}): Promise<{ html: string; headings: Heading[] }> {
+type RenderedMarkdown={html:string;headings:Heading[]};
+const renderedMarkdown=new RenderCache<RenderedMarkdown>();
+export function renderMarkdown(markdown:string,options:{pageTitle?:boolean}={}):Promise<RenderedMarkdown>{
+  const key=String(!!options.pageTitle)+':'+createHash('sha256').update(markdown).digest('hex');
+  return renderedMarkdown.get(key,()=>renderUncachedMarkdown(markdown,options),value=>Buffer.byteLength(value.html)+Buffer.byteLength(JSON.stringify(value.headings)));
+}
+async function renderUncachedMarkdown(markdown: string, options: {pageTitle?:boolean}): Promise<RenderedMarkdown> {
   const headings: Heading[]=[]; const ids=new Map<string,number>();
   const codeBlocks: {options:CodeOptions;source:string}[]=[];
   const processor: any = unified();

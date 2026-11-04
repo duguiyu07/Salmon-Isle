@@ -3,6 +3,5 @@ export async function register(){
     const {withWorkspace}=await import('./lib/library-context');
     const {recoverLibraryTransaction}=await import('./lib/library-transaction');withWorkspace(()=>recoverLibraryTransaction());
     const {beginDirectLibrary}=await import('./lib/direct-library');beginDirectLibrary();
-    const {startDirectSync}=await import('./lib/sync-engine');startDirectSync();
   }
 }

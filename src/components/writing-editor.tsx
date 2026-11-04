@@ -1,5 +1,6 @@
 "use client";
 import {forwardRef,useEffect,useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';
+import type {Ref} from 'react';
 import {createPortal} from 'react-dom';
 import {EditorView,type ViewUpdate} from '@codemirror/view';
 import {Layers,ArrowUp,ArrowDown,Plus,Bold,Italic,Strikethrough,List,ListOrdered,Link as LinkIcon,Undo2,Redo2,X,Trash2,ImagePlus,ChevronRight} from 'lucide-react';
@@ -15,6 +16,9 @@ import {MarkdownBody} from './reader';
 import {CodeEditor} from './code-editor';
 import {BlockControls,blockNames} from './block-controls';
 import {InsertionOptions} from './insertion-options';
+import {ColorPicker} from './color-picker';
+import {sourceColorEdits} from '@/lib/inline-color-edit';
+import type {ColorField} from '@/lib/inline-color';
 
 export type {EditorMode} from '@/lib/editor-ui';
 export type WritingDocument=DraftDocument;
@@ -23,6 +27,7 @@ interface Props{
   doc:WritingDocument;dirty:boolean;mode:EditorMode;onModeChange:(mode:EditorMode)=>void;preview:string;
   onChange:(patch:Partial<WritingDocument>)=>void;onUpload:(file:File)=>void;onChooseMedia?:()=>void;onError:(message:string)=>void;onBlockAvailabilityChange:(available:boolean)=>void;
 }
+export function LazyWritingEditor({editorRef,...props}:Props&{editorRef:Ref<WritingHandle>}){return <WritingEditor ref={editorRef} {...props}/>;}
 export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEditor({doc,mode,onModeChange,preview,onChange,onUpload,onChooseMedia,onError,onBlockAvailabilityChange},ref){
   const [docked,setDocked]=useState(false);const dock=useRef<HTMLDivElement>(null);
   const [cursor,setCursor]=useState(1),[block,setBlock]=useState<VisualBlock|null>(null),[settingsOpen,setSettingsOpen]=useState(false);
@@ -113,6 +118,13 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
   const canMove=(direction:-1|1)=>mode==='code'?!!sourceBlock&&!!sourceBlockMove(doc.body,sourceBlock,direction):!!visual.current?.canMove(direction);
   const move=(direction:-1|1)=>{flush();if(mode==='code'&&code.current&&sourceBlock){const edit=sourceBlockMove(doc.body,sourceBlock,direction);if(edit){code.current.dispatch({changes:{from:edit.from,to:edit.to,insert:edit.insert},selection:{anchor:edit.anchor},scrollIntoView:true});code.current.focus();}}else visual.current?.moveBlock(direction);};
   const format=(name:string,value?:string)=>visual.current?.format(name,value);
+  function applyColor(field:ColorField,value:string){
+    if(mode==='visual'){format(field,value);return;}
+    const view=code.current;if(!view)return;const selection=codeBookmark.current||view.state.selection.main;codeBookmark.current=null;
+    const edits=sourceColorEdits(view.state.doc.toString(),selection.from,selection.to,field,value);if(!edits.length)return;
+    const first=edits[0],last=edits.at(-1)!,delta=edits.slice(0,-1).reduce((sum,edit)=>sum+edit.insert.length-(edit.to-edit.from),0);
+    view.dispatch({changes:edits.map(({from,to,insert})=>({from,to,insert})),selection:{anchor:first.anchor,head:last.head+delta},scrollIntoView:true});view.focus();
+  }
   const keepSelection=(event:React.MouseEvent)=>{if((event.target as HTMLElement).closest('button')){flush();event.preventDefault();}};
   const anchor=insertAnchor||blank;
   const onRight=!!anchor&&(anchor.left<64||typeof window!=='undefined'&&window.innerWidth<=700);
@@ -123,11 +135,20 @@ export const WritingEditor=forwardRef<WritingHandle,Props>(function WritingEdito
     <input className="editor-title" placeholder="文章标题" aria-label="文章标题" value={doc.title} onChange={event=>onChange({title:event.target.value})}/>
     <div className={'editor-sticky-tools writing-toolbar mode-'+mode} ref={toolbar} role="toolbar" aria-label="写作工具" onMouseDown={keepSelection}>
       {mode!=='preview'&&<div className="writing-format-actions">
-        {mode==='visual'&&<><select aria-label="段落样式" defaultValue="0" onChange={event=>{format('heading',event.target.value);event.target.value='0';}}><option value="0">正文</option>{[1,2,3,4,5,6].map(level=><option key={level} value={level}>标题 {level}</option>)}</select>
-        {([['strong','加粗',Bold],['emphasis','斜体',Italic],['strike_through','删除线',Strikethrough],['bullet','无序列表',List],['ordered','有序列表',ListOrdered],['undo','撤销',Undo2],['redo','重做',Redo2]] as const).map(([name,label,Icon])=><button key={name} type="button" title={label} aria-label={label} onClick={()=>format(name)}><Icon size={16}/></button>)}
-        <button type="button" aria-label="快捷组合" title="将完整段落加入内容组" onClick={()=>visual.current?.groupSelection()}><Layers size={16}/></button><button type="button" aria-label="上移当前段落" title="上移完整段落或列表项" onClick={()=>visual.current?.moveBlock(-1)}><ArrowUp size={16}/></button><button type="button" aria-label="下移当前段落" title="下移完整段落或列表项" onClick={()=>visual.current?.moveBlock(1)}><ArrowDown size={16}/></button><button type="button" aria-label="删除当前段落" title="删除完整段落或列表项（可撤销）" onClick={()=>visual.current?.deleteSelectionBlocks()}><Trash2 size={16}/></button>
-        <button type="button" aria-label="插入链接" title="插入链接" onClick={()=>linkDialog.current?.showModal()}><LinkIcon size={16}/></button></>}
-        {onChooseMedia&&<button type="button" aria-label="插入图片" title="插入图片" onClick={()=>{rememberSelection();onChooseMedia();}}><ImagePlus size={16}/></button>}
+        {mode==='visual'&&<>
+          <div className="writing-tool-group" role="group" aria-label="段落样式"><select aria-label="段落样式" defaultValue="0" onChange={event=>{format('heading',event.target.value);event.target.value='0';}}><option value="0">正文</option>{[1,2,3,4,5,6].map(level=><option key={level} value={level}>标题 {level}</option>)}</select></div>
+          {([
+            ['文字格式',[['strong','加粗',Bold],['emphasis','斜体',Italic],['strike_through','删除线',Strikethrough]]],
+            ['列表',[['bullet','无序列表',List],['ordered','有序列表',ListOrdered]]],
+            ['撤销／重做',[['undo','撤销',Undo2],['redo','重做',Redo2]]]
+          ] as const).map(([group,items])=><div className="writing-tool-group" role="group" aria-label={group} key={group}>{items.map(([name,label,Icon])=><button key={name} type="button" title={label} aria-label={label} onClick={()=>format(name)}><Icon size={16}/></button>)}</div>)}
+          <div className="writing-tool-group" role="group" aria-label="段落操作"><button type="button" aria-label="快捷组合" title="将完整段落加入内容组" onClick={()=>visual.current?.groupSelection()}><Layers size={16}/></button><button type="button" aria-label="上移当前段落" title="上移完整段落或列表项" onClick={()=>visual.current?.moveBlock(-1)}><ArrowUp size={16}/></button><button type="button" aria-label="下移当前段落" title="下移完整段落或列表项" onClick={()=>visual.current?.moveBlock(1)}><ArrowDown size={16}/></button><button type="button" aria-label="删除当前段落" title="删除完整段落或列表项（可撤销）" onClick={()=>visual.current?.deleteSelectionBlocks()}><Trash2 size={16}/></button></div>
+        </>}
+        <div className="writing-tool-group" role="group" aria-label="文字颜色与背景色">{(['color','background'] as const).map(field=><ColorPicker key={field} field={field} onRemember={rememberSelection} onApply={applyColor}/>)}</div>
+        <div className="writing-tool-group" role="group" aria-label="插入">
+          {mode==='visual'&&<button type="button" aria-label="插入链接" title="插入链接" onClick={()=>linkDialog.current?.showModal()}><LinkIcon size={16}/></button>}
+          {onChooseMedia&&<button type="button" aria-label="插入图片" title="插入图片" onClick={()=>{rememberSelection();onChooseMedia();}}><ImagePlus size={16}/></button>}
+        </div>
       </div>}
       <div className="writing-view-modes" role="group" aria-label="编辑模式">{([['visual','可视化'],['code','源码'],['preview','预览']] as const).map(([value,label])=><button type="button" key={value} aria-pressed={mode===value} className={mode===value?'active':''} onClick={()=>onModeChange(value)}>{label}</button>)}</div>
     </div>

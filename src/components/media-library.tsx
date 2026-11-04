@@ -36,7 +36,7 @@ export function MediaLibrary({onSelect,imagesOnly=false,onChanged}:{onSelect?:(m
   const activeReferences=references.some(ref=>ref.kind!=='trash'),trashOnly=references.length>0&&!activeReferences;
   async function remove(){
     if(!selected)return;
-    const message=trashOnly?'此资源仅被回收站内容引用。强制删除会将这些位置替换为“资源已删除”占位，恢复文章后也会保留占位。继续？':'将「'+selected.name+'」移入回收站？提交推送后才从网站移除。';
+    const message=trashOnly?'此资源仅被回收站内容引用。强制删除会将这些位置替换为“资源已删除”占位，恢复文章后也会保留占位。继续？':'将「'+selected.name+'」移入回收站？确认后将从网站移除。';
     if(!window.confirm(message))return;
     setBusy(true);setError('');
     try{await contentApi('admin/media/'+selected.id,{forceTrashReferences:trashOnly},'DELETE');setSelected(null);refresh();onChanged?.();}
@@ -84,17 +84,17 @@ export function MediaLibrary({onSelect,imagesOnly=false,onChanged}:{onSelect?:(m
   </section>;
 }
 
-export function ImagePicker({onClose,onSelect,onUpload}:{onClose:()=>void;onSelect:(value:{url:string;name:string;type:string})=>void;onUpload:(file:File)=>Promise<void>}){
+export function ImagePicker({onClose,onSelect,onUpload,title='插入图片'}:{title?:string;onClose:()=>void;onSelect:(value:{url:string;name:string;type:string})=>void;onUpload:(file:File)=>Promise<void>}){
   const dialog=useRef<HTMLDialogElement>(null),[tab,setTab]=useState('library'),[url,setUrl]=useState(''),[alt,setAlt]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
   return <dialog className="image-picker" ref={dialog} onCancel={event=>{event.preventDefault();if(!busy)onClose();}}>
-    <div className="modal-heading"><h2>插入图片</h2><button type="button" className="icon-button" aria-label="关闭图片选择" onClick={onClose} disabled={busy}><X size={19}/></button></div>
+    <div className="modal-heading"><h2>{title}</h2><button type="button" className="icon-button" aria-label="关闭图片选择" onClick={onClose} disabled={busy}><X size={19}/></button></div>
     <div className="image-source-tabs" role="tablist" aria-label="图片来源">{[['library','媒体库'],['upload','上传'],['url','URL']].map(([id,label])=><button key={id} id={'image-tab-'+id} type="button" role="tab" aria-controls={'image-panel-'+id} aria-selected={tab===id} disabled={busy} onClick={()=>{setTab(id);setError('');}}>{label}</button>)}</div>
     {error&&<p role="alert" className="form-error">{error}</p>}
     <div className="image-picker-body">
       <div id="image-panel-library" role="tabpanel" aria-labelledby="image-tab-library" hidden={tab!=='library'}><MediaLibrary imagesOnly onSelect={media=>onSelect({url:'/api/media/'+media.id,name:media.name,type:media.type})}/></div>
-      <div id="image-panel-upload" role="tabpanel" aria-labelledby="image-tab-upload" hidden={tab!=='upload'}><div className="image-upload-zone"><Upload size={28}/><h3>上传图片</h3><p>图片加入内容库，随提交一起推送。单个文件不超过 40 MB。</p><label className={'button primary'+(busy?' is-disabled':'')}>{busy?'正在上传…':'选择图片'}<input hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,.svg" disabled={busy} onChange={async event=>{const file=event.target.files?.[0];if(!file)return;setBusy(true);setError('');try{await onUpload(file);onClose();}catch(error){setError((error as Error).message);}finally{setBusy(false);}}}/></label></div></div>
-      <div id="image-panel-url" role="tabpanel" aria-labelledby="image-tab-url" hidden={tab!=='url'}><form className="image-url-form" onSubmit={event=>{event.preventDefault();try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))throw new Error('仅支持 HTTP 或 HTTPS 图片地址');onSelect({url:parsed.href,name:alt,type:'image/url'});}catch(error){setError((error as Error).message);}}}><label>图片地址<input type="url" required placeholder="https://example.com/image.png" value={url} onChange={event=>setUrl(event.target.value)}/></label><label>替代文本<input value={alt} onChange={event=>setAlt(event.target.value)}/></label><p className="small muted">外链不下载到仓库，离线时可能无法显示。</p><button className="button primary" type="submit">插入图片</button></form></div>
+      <div id="image-panel-upload" role="tabpanel" aria-labelledby="image-tab-upload" hidden={tab!=='upload'}><div className="image-upload-zone"><Upload size={28}/><h3>上传图片</h3><p>图片上传到网站，发布文章后可供访客访问。单个文件不超过 40 MB。</p><label className={'button primary'+(busy?' is-disabled':'')}>{busy?'正在上传…':'选择图片'}<input hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,.svg" disabled={busy} onChange={async event=>{const file=event.target.files?.[0];if(!file)return;setBusy(true);setError('');try{await onUpload(file);onClose();}catch(error){setError((error as Error).message);}finally{setBusy(false);}}}/></label></div></div>
+      <div id="image-panel-url" role="tabpanel" aria-labelledby="image-tab-url" hidden={tab!=='url'}><form className="image-url-form" onSubmit={event=>{event.preventDefault();try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))throw new Error('仅支持 HTTP 或 HTTPS 图片地址');onSelect({url:parsed.href,name:alt,type:'image/url'});}catch(error){setError((error as Error).message);}}}><label>图片地址<input type="url" required placeholder="https://example.com/image.png" value={url} onChange={event=>setUrl(event.target.value)}/></label><label>替代文本<input value={alt} onChange={event=>setAlt(event.target.value)}/></label><p className="small muted">外链图片使用原地址，显示取决于图片来源。</p><button className="button primary" type="submit">{title}</button></form></div>
     </div>
   </dialog>;
 }

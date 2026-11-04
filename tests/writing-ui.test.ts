@@ -29,6 +29,7 @@ test('blank-line insertions retain their caret and outside dismissal commits pen
     await act(async()=>{root.render(createElement(Harness));});
     for(let index=0;index<30&&container.querySelector('.editor-loading');index++)await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
     assert.equal(container.querySelector('.editor-loading'),null);
+    assert.deepEqual(Array.from(container.querySelectorAll('.writing-tool-group')).map(group=>group.getAttribute('aria-label')),['段落样式','文字格式','列表','撤销／重做','段落操作','文字颜色与背景色','插入']);
     const editor=container.querySelector<HTMLElement>('.visual-document')!;assert.ok(editor);
     await act(async()=>{editor.focus();await Promise.resolve();});
     assert.ok(document.querySelector('.writing-inline-plus'));assert.equal((document.querySelector('.writing-inline-insert') as HTMLElement).style.left,'52px');

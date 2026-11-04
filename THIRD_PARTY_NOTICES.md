@@ -24,10 +24,9 @@ third-party dependencies, fonts, logos, or privately supplied site content.
 
 ## JavaScript dependencies
 
-Dependency versions and provenance are recorded in `package-lock.json` and
-`desktop/package-lock.json`. Their own license and copyright notices remain in
+Dependency versions and provenance are recorded in `package-lock.json`. Their own license and copyright notices remain in
 their distributions. This includes Next.js, React, Milkdown, CodeMirror, KaTeX,
-Shiki, unified/remark/rehype, Electron, electron-builder, Dugite, and other
+Shiki, unified/remark/rehype, and other
 transitive dependencies. Bundled binaries and fonts retain their upstream terms.
 
 ## Site content

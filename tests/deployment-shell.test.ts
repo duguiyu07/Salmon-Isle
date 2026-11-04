@@ -16,8 +16,11 @@ function fixture() {
   fs.writeFileSync(path.join(root, '.env'), 'SALMON_WEB_IMAGE=ghcr.io/duguiyu07/salmon-isle:1.0.0\nSALMON_ORIGIN=https://salmon-isle.com\n');
   fs.writeFileSync(path.join(root, 'compose.yml'), 'services:\n  blog:\n    image: ${SALMON_WEB_IMAGE}\n');
   for (const [from, to] of [['deploy/backup-site.sh', 'backup-site.sh'], ['deploy/restore-site.sh', 'restore-site.sh'], ['scripts/update-site.sh', 'update-site.sh']]) {
-    fs.writeFileSync(path.join(root, 'scripts', to), fs.readFileSync(from, 'utf8').replaceAll('\r\n', '\n'));
+    // Exercise the delivered bytes; newline conversion here hides broken Linux scripts.
+    fs.copyFileSync(from, path.join(root, 'scripts', to));
   }
+  fs.copyFileSync('scripts/cleanup-site.sh',path.join(root,'scripts','cleanup-site.sh'));
+  fs.copyFileSync('deploy/cleanup-data.cjs',path.join(root,'scripts','cleanup-data.cjs'));
   const docker = `#!/bin/sh
 printf '%s\\n' "$*" >> "$SALMON_TEST_DOCKER_LOG"
 case "$*" in
@@ -66,4 +69,8 @@ test('Linux image update failure restores the old image and environment while re
     assert.ok(fs.existsSync(path.join(backup, 'data.tar.gz')));
     assert.match(fs.readFileSync(path.join(f.root, 'docker.log'), 'utf8'), /rollback.yml up -d/);
   } finally {f.remove();}
+});
+
+test('an offline update uses the imported image and never pulls from a registry', {skip: !fs.existsSync(shell)},()=>{
+ const f=fixture();try{const result=f.run('update-site.sh',['--image','ghcr.io/duguiyu07/salmon-isle:2.1.0','--local']);assert.equal(result.status,0,result.stderr);const log=fs.readFileSync(path.join(f.root,'docker.log'),'utf8');assert.doesNotMatch(log,/^pull |compose pull/m);assert.match(log,/image inspect ghcr.io/);assert.match(log,/--pull never/);assert.deepEqual(fs.readdirSync(path.join(f.root,'backups')),[]);}finally{f.remove();}
 });

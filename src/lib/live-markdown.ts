@@ -10,7 +10,10 @@ import {gfm,strikethroughInputRule} from '@milkdown/kit/preset/gfm';
 import {Plugin,PluginKey,TextSelection,type EditorState,type Transaction} from '@milkdown/kit/prose/state';
 import {Decoration,DecorationSet,type EditorView} from '@milkdown/kit/prose/view';
 import katex from 'katex';
+import {closeHistory} from '@milkdown/kit/prose/history';
 import {cleanInlineStyle} from './styles';
+import {inlineColors,inlineColorStyle,type ColorField} from './inline-color';
+import {inlineColorEdit} from './inline-color-edit';
 
 const excluded=new Set<any>([strongInputRule,emphasisStarInputRule,emphasisUnderscoreInputRule,inlineCodeInputRule,wrapInHeadingInputRule,insertHrInputRule,strikethroughInputRule]);
 export const liveCommonmark=commonmark.filter(plugin=>!excluded.has(plugin));
@@ -60,6 +63,8 @@ export function inlineSyntax(source:string):InlineSyntax[]{
   const cached=syntaxCache.get(source);if(cached)return cached;
   const result:InlineSyntax[]=[];
   const scan=(node:any)=>{
+    const colors={...node.inlineColorContext,...(node.type==='textDirective'&&node.name==='text'?inlineColors(node.attributes||{}):{})};
+    const children=()=>node.children?.forEach((child:any)=>{child.inlineColorContext=colors;scan(child);});
     const from=node.position?.start.offset,to=node.position?.end.offset;
     if(from!==undefined&&to!==undefined){
       const raw=source.slice(from,to);let start=from,end=to;
@@ -71,11 +76,11 @@ export function inlineSyntax(source:string):InlineSyntax[]{
         if(raw.startsWith('[')){start=from+1;end=node.children?.at(-1)?.position?.end.offset??to;}
         else if(raw.startsWith('<')){start=from+1;end=to-1;}
       }
-      else if(node.type==='textDirective'&&node.name==='spoiler'){start=from+9;end=to-1;}
-      else {node.children?.forEach(scan);return;}
-      result.push({kind:node.type==='textDirective'?'spoiler':node.type,from,to,contentFrom:start,contentTo:end,value:node.value,url:node.url});
+      else if(node.type==='textDirective'&&['spoiler','text'].includes(node.name)){start=from+(node.name==='text'?6:9);end=from+raw.lastIndexOf(']');}
+      else {children();return;}
+      result.push({kind:node.type==='textDirective'?node.name:node.type,from,to,contentFrom:start,contentTo:end,value:node.value,url:node.url,...(node.type==='textDirective'&&node.name==='text'?{style:inlineColorStyle(colors)}:{})});
     }
-    node.children?.forEach(scan);
+    children();
   };scan(parser.parse(source));
   // Preserve imported styled spans while editing their actual HTML source.
   const stack:{tag:string;from:number;contentFrom:number;style:string}[]=[];
@@ -116,6 +121,20 @@ export function headingTransaction(state:EditorState,level:number){
   const prefix=$from.parent.textContent.match(/^#{1,6}[ \t]+/)?.[0]||'',replacement=level?'#'.repeat(level)+' ':'';
   const start=$from.start(),tr=state.tr.insertText(replacement,start,start+prefix.length);
   tr.setNodeMarkup($from.before(),level?state.schema.nodes.heading:state.schema.nodes.paragraph,level?{level}:undefined);return tr;
+}
+
+export function colorTransaction(state:EditorState,field:ColorField,value:string):Transaction|null{
+  const tr=state.tr,selection=state.selection,edits:{from:number;to:number;insert:string;anchor:number;head:number}[]=[];
+  state.doc.descendants((node,pos)=>{
+    if(!['paragraph','heading','hr'].includes(node.type.name)||pos+node.nodeSize-1<selection.from||pos+1>selection.to)return;
+    const text=node.textBetween(0,node.content.size,'','\uFFFC'),from=Math.max(0,selection.from-pos-1),to=Math.min(node.content.size,selection.to-pos-1);
+    if(text.slice(from,to).includes('\uFFFC'))return;
+    const edit=inlineColorEdit(text,from,to,field,value);if(edit)edits.push({...edit,from:edit.from+pos+1,to:edit.to+pos+1,anchor:edit.anchor+pos+1,head:edit.head+pos+1});
+  });
+  if(!edits.length)return null;
+  for(const edit of edits.toReversed())tr.insertText(edit.insert,edit.from,edit.to);
+  const first=edits[0],last=edits.at(-1)!,delta=edits.slice(0,-1).reduce((sum,edit)=>sum+edit.insert.length-(edit.to-edit.from),0);
+  return closeHistory(tr.setSelection(TextSelection.create(tr.doc,first.anchor,last.head+delta)).scrollIntoView());
 }
 
 const liveKey=new PluginKey('salmon-live-markdown');
@@ -174,7 +193,7 @@ export function liveMarkdownPlugin(){return new Plugin({
         const ranges=inlineSyntax(source);
         for(const range of ranges){
           const active=intersects(range.from,range.to);
-          const classes:Record<string,string>={strong:'live-strong',emphasis:'live-emphasis',delete:'live-strike',inlineCode:'live-code',link:'live-link',spoiler:'live-spoiler',html:`live-html live-html-${range.tag}`};
+          const classes:Record<string,string>={strong:'live-strong',emphasis:'live-emphasis',delete:'live-strike',inlineCode:'live-code',link:'live-link',spoiler:'live-spoiler',text:'inline-colored-text',html:`live-html live-html-${range.tag}`};
           if(range.kind==='inlineMath'&&!active){
             hide(range.from,range.to);
             decorations.push(Decoration.widget(start+range.from,view=>{

@@ -1,8 +1,9 @@
-﻿param([string]$Image='')
+﻿param([string]$Image='',[switch]$Local,[switch]$RetainBackup)
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Push-Location -LiteralPath $project
 try {
+  if($Local -and -not $Image){throw '-Local 需要同时指定 -Image'}
   $stamp=[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
   $backup=[IO.Path]::GetFullPath((Join-Path $project "backups/program-$stamp"))
   if(-not $backup.StartsWith($project+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe backup directory'}
@@ -18,7 +19,7 @@ try {
   $configText | Set-Content -LiteralPath (Join-Path $backup 'compose.json') -Encoding utf8
   if($Image){
     if($Image -notmatch '^ghcr\.io/[a-z0-9._/-]+:[a-zA-Z0-9._-]+$'){throw '镜像地址必须是 ghcr.io 上带版本的程序镜像'}
-    & docker pull $Image
+    if($Local){& docker image inspect $Image *> $null}else{& docker pull $Image}
   } elseif($config.services.blog.image -eq 'salmon-isle:local'){
     & git rev-parse --is-inside-work-tree *> $null
     if($LASTEXITCODE -ne 0){throw '源码目录未连接 Git；请从后台复制带 -Image 参数的镜像更新命令'}
@@ -46,7 +47,7 @@ try {
       [IO.File]::WriteAllLines($envFile,$next,[Text.UTF8Encoding]::new($false))
       $env:SALMON_WEB_IMAGE=$Image
     }
-    & docker compose up -d --no-deps --wait --wait-timeout 120 blog
+    if($Local){& docker compose up -d --no-deps --pull never --wait --wait-timeout 120 blog}else{& docker compose up -d --no-deps --wait --wait-timeout 120 blog}
     if($LASTEXITCODE -ne 0){throw '新版本启动检查未通过'}
   } catch {
     & docker compose stop blog
@@ -66,5 +67,6 @@ try {
     & docker compose -f (Join-Path $project 'compose.yml') -f $rollbackFile up -d --no-deps --wait --wait-timeout 120 blog
     throw "更新失败，已尝试恢复上一镜像。备份：$backup。$($_.Exception.Message)"
   }
-  Write-Output "网站已更新，内容与连接数据保留。备份：$backup"
+  if($RetainBackup){Write-Output "网站已更新，临时备份：$backup。验收后运行 scripts/cleanup-site.ps1。"}
+  else {& (Join-Path $PSScriptRoot 'cleanup-site.ps1');Write-Output '网站已更新，当前内容保留，临时历史已清理。'}
 } finally {Pop-Location}

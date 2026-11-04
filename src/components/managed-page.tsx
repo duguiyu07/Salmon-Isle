@@ -12,6 +12,6 @@ export async function ManagedPage({page,viewer,query={}}:{page:Article;viewer:Vi
   const comments=readable&&!rule.restricted&&settings.giscus.enabled&&settings.giscus.repo&&['/misc','/links'].includes(page.route||'');
   return <main id="main" className={`managed-page ${result?.className||'reading-width standalone-page'}`} data-page-id={page.id}>
     {page.status==='draft'&&<span className="status-badge">草稿 · 仅管理员可见</span>}
-    {result?<><style>{result.css}</style><MarkdownBody html={result.html} className={['/','/knowledge'].includes(page.route||'')?'page-html-body':'markdown-body'}/>{comments&&<Giscus config={settings.giscus} term={page.giscusTerm||`salmon:${page.id}`}/>}</>:gate?<UnlockForm articleId={page.id} gateId={gate.id} name={gate.name}/>:null}
+    {result?<><style>{result.css}</style><MarkdownBody html={result.html} archiveNavigation className={['/','/knowledge'].includes(page.route||'')?'page-html-body':'markdown-body'}/>{comments&&<Giscus config={settings.giscus} term={page.giscusTerm||`salmon:${page.id}`}/>}</>:gate?<UnlockForm articleId={page.id} gateId={gate.id} name={gate.name}/>:null}
   </main>;
 }

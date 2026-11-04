@@ -45,7 +45,7 @@ export type StyleField = typeof styleFields[number];
 const color = /^(?:#[\da-f]{3,8}|transparent|currentColor|(?:rgb|hsl)a?\([\d.,% /-]+\))$/i;
 const length = /^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%))(?:\s+(?:0|\d+(?:\.\d+)?(?:px|rem|em|%))){0,3}$/;
 export function validStyle(name: string, value: string) {
-  if (['background','color','borderColor'].includes(name)) return color.test(value);
+  if (['background','color','borderColor'].includes(name)) return color.test(value)||/^light-dark\(#[\da-f]{6},\s*#[\da-f]{6}\)$/i.test(value);
   if (name === 'borderStyle') return /^(solid|dashed|dotted|double|none)$/.test(value);
   if (name === 'lineHeight') return /^(?:[0-9](?:\.\d{1,2})?|\d+(?:\.\d+)?(?:px|rem|em))$/.test(value);
   if (name === 'textAlign') return /^(left|right|center|justify|start|end)$/.test(value);

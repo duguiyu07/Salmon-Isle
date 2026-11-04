@@ -1,9 +1,10 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Menu,X,ChevronLeft} from 'lucide-react';
+import Link from 'next/link';
 import {useModalPanel} from './use-modal-panel';
 
-export function WritingMenu({open,onOpenChange,status,statusKind,children,onExit,entity='文章'}:{open:boolean;onOpenChange:(open:boolean)=>void;status:string;statusKind:string;children:ReactNode;onExit?:()=>void;entity?:string}){
+export function WritingMenu({open,onOpenChange,status,statusKind,children,onExit,exitHref,onExitNavigate,entity='文章'}:{open:boolean;onOpenChange:(open:boolean)=>void;status:string;statusKind:string;children:ReactNode;onExit?:()=>void;exitHref?:string;onExitNavigate?:(event:{preventDefault:()=>void})=>void;entity?:string}){
   const panel=useRef<HTMLElement>(null),drag=useRef<{x:number;y:number;left:number;top:number;moved:boolean}|null>(null),suppressClick=useRef(false);
   const launcher=useRef<HTMLButtonElement>(null),wasOpen=useRef(open);
   const [dock,setDock]=useState({side:'right',ratio:0}),[point,setPoint]=useState<{left:number;top:number}|null>(null),[height,setHeight]=useState(800);
@@ -28,7 +29,7 @@ export function WritingMenu({open,onOpenChange,status,statusKind,children,onExit
       onClick={()=>{if(suppressClick.current){suppressClick.current=false;return;}onOpenChange(true);}}><Menu size={19}/><span className="writing-menu-signal" aria-hidden="true"/></button>
     <button type="button" className="writing-menu-backdrop" hidden={!open} inert={!open} tabIndex={-1} aria-label={`关闭${entity}菜单`} onClick={()=>onOpenChange(false)}/>
     <aside ref={panel} id="writing-menu-panel" className="writing-menu-panel" role="dialog" aria-modal={open?true:undefined} aria-label={`${entity}菜单`} hidden={!open} inert={!open}>
-      <div className="writing-menu-heading"><button type="button" className="text-button writing-back" onClick={onExit}><ChevronLeft size={15}/>退出编辑</button><button type="button" className="icon-button" aria-label={`关闭${entity}菜单`} onClick={()=>onOpenChange(false)}><X size={19}/></button></div>
+      <div className="writing-menu-heading">{exitHref?<Link className="text-button writing-back" href={exitHref} onNavigate={onExitNavigate}><ChevronLeft size={15}/>退出编辑</Link>:<button type="button" className="text-button writing-back" onClick={onExit}><ChevronLeft size={15}/>退出编辑</button>}<button type="button" className="icon-button" aria-label={`关闭${entity}菜单`} onClick={()=>onOpenChange(false)}><X size={19}/></button></div>
       {children}
     </aside>
   </>;

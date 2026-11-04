@@ -126,7 +126,7 @@ test('caption repair keeps localized and edited images, avoids wrappers, and is 
   const ambiguous=repairImageCaptions(current+'\n\n![](/other.png)\n\n关系 **趋势**',corrected);assert.equal(ambiguous.changed,false);assert.equal(ambiguous.conflicts.length,1);
 });
 
-test('Index stays within the stable blog root while sidebar lists only the current folder in natural order',()=>{
+test('Index includes root and unclassified posts but excludes the MISC subtree and hidden content',()=>{
   const blog=saveFolder({name:'博客'}),topic=saveFolder({name:'数据结构',parentId:blog.id}),child=saveFolder({name:'子目录',parentId:topic.id}),misc=saveFolder({name:'MISC'});
   saveSettings({...getSettings(),knowledgeRootId:blog.id});
   for(const title of ['第10章','第2章','第1章'])saveArticle({title,body:'正文',summary:'摘要',status:'published',folderId:topic.id});
@@ -135,11 +135,12 @@ test('Index stays within the stable blog root while sidebar lists only the curre
   saveArticle({title:'草稿',body:'正文',folderId:topic.id});saveArticle({title:'私密',body:'正文',status:'published',folderId:topic.id,access:'private'});
   saveArticle({title:'根目录文章',body:'正文',status:'published',folderId:blog.id});saveArticle({title:'下级文章',body:'正文',status:'published',folderId:child.id});saveArticle({title:'杂项',body:'正文',status:'published',folderId:misc.id});saveArticle({title:'站点根目录文章',body:'正文',status:'published'});
   for(const viewer of [visitor,admin]){
-    const data=knowledgeData(viewer);assert.equal(data.articles.length,7);assert.ok(!data.articles.some(a=>['杂项','站点根目录文章','草稿','私密'].includes(a.title)));
+    const data=knowledgeData(viewer);assert.equal(data.articles.length,8);assert.ok(!data.articles.some(a=>['杂项','草稿','私密'].includes(a.title)));
     const related=folderArticles(topic.id,viewer);assert.deepEqual(related.map(a=>a.title),['权重优先','第1章','第2章','第10章','密码文章']);assert.equal(related.at(-1)?.summary,'');
   }
-  saveFolder({...blog,name:'改名后的博客'});assert.equal(knowledgeData(visitor).articles.length,7);
-  fs.writeFileSync(path.join(directory,'site.yml'),'knowledgeRootId: missing-root\n');assert.equal(knowledgeData(visitor).articles.length,0);
+  saveFolder({...blog,name:'改名后的博客'});assert.equal(knowledgeData(visitor).articles.length,8);
+  saveArticle({title:'MISC',kind:'page',contentFormat:'html',route:'/misc',template:'collection',body:'<div data-page-slot="collection"></div>',collection:{folderId:misc.id,perPage:10},status:'published'});saveFolder({...misc,name:'改名后的杂项'});assert.ok(!knowledgeData(visitor).articles.some(article=>article.title==='杂项'),'MISC binding follows its stable folder ID');
+  fs.writeFileSync(path.join(directory,'site.yml'),'knowledgeRootId: missing-root\n');assert.equal(knowledgeData(visitor).articles.length,8);
 });
 
 test('15 and 10 item pages normalize invalid bounds and preserve archive filters',()=>{

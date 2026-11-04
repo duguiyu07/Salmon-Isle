@@ -1,6 +1,6 @@
 {
   "name": "salmon-isle",
-  "version": "2.0.5",
+  "version": "2.2.1",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
@@ -17,7 +17,7 @@
     "start": "next start --hostname 0.0.0.0",
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:http": "tsx tests/sync-http-smoke.ts",
+    "test:http": "tsx tests/http-smoke.ts",
     "setup": "tsx scripts/setup.ts",
     "import:wordpress": "tsx scripts/import-wordpress.ts",
     "backup": "tsx scripts/backup.ts",
@@ -25,19 +25,12 @@
     "repair:wordpress": "tsx scripts/repair-wordpress.ts",
     "repair:captions": "tsx scripts/repair-captions.ts",
     "migrate:pages": "tsx scripts/migrate-pages.ts",
-    "test:standalone": "tsx tests/sync-http-smoke.ts --standalone",
-    "desktop:install": "npm --prefix desktop ci && npm --prefix desktop run runtime:install",
-    "desktop:prepare": "tsx scripts/prepare-desktop.ts",
-    "desktop:start": "npm --prefix desktop start",
-    "desktop:package": "npm run build && npm run desktop:prepare && npm --prefix desktop run package",
-    "desktop:smoke": "tsx scripts/test-desktop.ts",
+    "test:standalone": "tsx tests/http-smoke.ts --standalone",
     "release:metadata": "tsx scripts/release-metadata.ts",
     "release:source": "tsx scripts/release-source.ts",
     "release:deployment": "tsx scripts/release-deployment.ts",
     "prepare:deployment": "tsx scripts/prepare-deployment.ts",
-    "test:sync-http": "tsx tests/sync-http-smoke.ts",
-    "migrate:v2": "tsx scripts/migrate-v2.ts",
-    "test:upgrade": "tsx scripts/test-upgrade.ts"
+    "migrate:v2": "tsx scripts/migrate-v2.ts"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

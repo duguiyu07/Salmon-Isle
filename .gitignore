@@ -19,6 +19,7 @@ desktop/update-defaults.json
 dist/
 *.salmon-lock
 deploy-secrets/
+服务器ssh信息/
 restored-data/
 content-test/
 deploy-input/

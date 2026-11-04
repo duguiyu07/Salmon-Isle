@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { CalendarDays, FolderClosed, ArrowLeft, ArrowRight } from 'lucide-react';
+import { CalendarDays, FolderClosed, ArrowLeft, ArrowRight,Pencil } from 'lucide-react';
 import { findArticle, listArticles, listFolders, getSettings } from '@/lib/storage';
 import { getViewer } from '@/lib/auth';
 import { canRead, visibility } from '@/lib/access';
@@ -11,6 +11,7 @@ import { SiteHeader, SiteFooter } from '@/components/site-chrome';
 import { dateText } from '@/components/article-card';
 import { CollectionList } from '@/components/collection-list';
 import {ManagedPage} from '@/components/managed-page';
+import {adminHref} from '@/lib/admin-view';
 import {articleForEditorViewer} from '@/lib/editor-drafts';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{page?:string}> };
@@ -69,18 +70,19 @@ export default async function ArticlePage({ params,searchParams }: Props) {
     </>;
   }
 
-  const siblings = listArticles().filter(a => a.kind === 'post' && a.status === 'published' && !visibility(a).hidden);
+  const allArticles=listArticles();
+  const siblings = allArticles.filter(a => a.kind === 'post' && a.status === 'published' && !visibility(a,folders).hidden);
   const index = siblings.findIndex(a => a.id === article.id);
   const previous = siblings[index + 1];
   const next = index > 0 ? siblings[index - 1] : undefined;
-  return <ReaderLayout headings={headings} categoryName={folder?.name||'同类文章'} articles={folderArticles(article.folderId,viewer)} currentArticleId={article.id} settings={settings} commentTerm={commentTerm}>
+  return <ReaderLayout headings={headings} categoryName={folder?.name||'同类文章'} articles={folderArticles(article.folderId,viewer,{articles:allArticles,folders})} currentArticleId={article.id} settings={settings} commentTerm={commentTerm}>
     <main id="main" className="article-page reading-width">
       <div className="breadcrumbs">
         <Link href="/">首页</Link><span>/</span>
         <Link href={`/knowledge?folder=${article.folderId}`}>{folder?.name || '文章'}</Link><span>/</span><span>正文</span>
       </div>
       <header className="article-header">
-        {draftBadge}<h1>{article.title}</h1>
+        {draftBadge}<div className="article-title-row"><h1>{article.title}</h1>{viewer.admin&&<Link className="icon-button article-edit-link" href={adminHref({section:'articles',edit:article.id})} prefetch={false} title="编辑文章" aria-label="编辑文章"><Pencil size={20}/></Link>}</div>
         <div className="article-meta">
           <span><CalendarDays size={14} /><time dateTime={article.createdAt}>{dateText(article.createdAt)}</time></span>
           <Link href={`/knowledge?folder=${article.folderId}`}><FolderClosed size={14} />{folder?.name}</Link>

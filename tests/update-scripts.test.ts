@@ -9,6 +9,8 @@ function runUpdate(fail:boolean){
   fs.mkdirSync(scripts);fs.mkdirSync(path.join(root,'data'));fs.writeFileSync(path.join(root,'data','content.txt'),'Offline content 你好');
   const originalEnv='SALMON_WEB_IMAGE=ghcr.io/owner/source:1.0.0\nSALMON_ADMIN_HASH=keep-this-setting\n';fs.writeFileSync(path.join(root,'.env'),originalEnv);
   fs.copyFileSync('scripts/update-site.ps1',path.join(scripts,'update-site.ps1'));
+  fs.copyFileSync('scripts/cleanup-site.ps1',path.join(scripts,'cleanup-site.ps1'));
+  fs.copyFileSync('deploy/cleanup-data.cjs',path.join(scripts,'cleanup-data.cjs'));
   const quote=(value:string)=>"'"+value.replaceAll("'","''")+"'";
   const stub=[
     'function global:docker {',
@@ -23,11 +25,11 @@ function runUpdate(fail:boolean){
   const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',stub],{encoding:'utf8',windowsHide:true});
   return {root,result,log,originalEnv};
 }
-test('website update script backs up persistent data and preserves unrelated deployment settings',{skip:process.platform!=='win32'},()=>{
+test('successful website updates clean temporary backups and preserve unrelated deployment settings',{skip:process.platform!=='win32'},()=>{
   const run=runUpdate(false);
   try{
     assert.equal(run.result.status,0,run.result.stderr);assert.equal(fs.readFileSync(path.join(run.root,'data/content.txt'),'utf8'),'Offline content 你好');
-    const backup=path.join(run.root,'backups',fs.readdirSync(path.join(run.root,'backups'))[0]);assert.equal(fs.readFileSync(path.join(backup,'data/content.txt'),'utf8'),'Offline content 你好');
+    assert.deepEqual(fs.readdirSync(path.join(run.root,'backups')),[]);
     const env=fs.readFileSync(path.join(run.root,'.env'),'utf8');assert.match(env,/SALMON_WEB_IMAGE=ghcr.io\/owner\/source:2.0.0/);assert.match(env,/SALMON_ADMIN_HASH=keep-this-setting/);
     assert.match(fs.readFileSync(run.log,'utf8'),/compose up -d --no-deps --wait/);
   }finally{assert.ok(path.resolve(run.root).startsWith(path.resolve(os.tmpdir())+path.sep+'salmon-update-script-'));fs.rmSync(run.root,{recursive:true,force:true});}

@@ -3,7 +3,7 @@ import path from 'node:path';
 import {runtimeDir,libraryRoot,libraryReadOnly} from './library-context';
 export function dataDir() { return runtimeDir(); }
 export function initDirs() {
-  for(const d of ['', 'history', 'imports'])fs.mkdirSync(path.join(dataDir(),d),{recursive:true});
+  for(const d of ['', 'imports'])fs.mkdirSync(path.join(dataDir(),d),{recursive:true});
   if(!libraryReadOnly())for(const d of ['content','media','media-meta','trash','editor-drafts'])fs.mkdirSync(path.join(libraryRoot(),d),{recursive:true});
 }
 export function within(base: string, relative: string) {

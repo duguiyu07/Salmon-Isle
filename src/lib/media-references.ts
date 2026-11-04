@@ -1,3 +1,4 @@
+import {staticAsset} from './static-asset';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -9,7 +10,7 @@ import type {Article} from './model';
 import {AppError} from './model';
 import type {MediaReference} from './media-model';
 
-export const deletedMediaPlaceholder='/media-deleted.svg';
+export const deletedMediaPlaceholder=staticAsset('/media-deleted.svg');
 type Fields=Record<string,unknown>;
 interface Source {file:string;field:string;document:Fields;value:unknown;id:string;title:string;kind:MediaReference['kind'];trashId?:string}
 interface ReferenceIndex {signature:string;sources:Source[];references:Map<string,MediaReference[]>}

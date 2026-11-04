@@ -5,7 +5,7 @@ import rehypeStringify from 'rehype-stringify';
 import {load} from 'cheerio';
 import postcss from 'postcss';
 import {visit} from 'unist-util-visit';
-import {getSettings,listArticles,listFolders} from './storage';
+import {getSettings,contentSnapshot,type ContentSnapshot} from './storage';
 import {publicArticle} from './access';
 import {descendantIds,knowledgeData,publicData} from './public-data';
 import {paginate,archiveHref} from './pagination';
@@ -56,36 +56,37 @@ function card(article:PublicArticle,compact=false){
   const date=new Date(article.createdAt).toLocaleDateString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Hong_Kong'}).replaceAll('/','.');
   return `<article class="article-card${article.cover?' with-cover':''}">${article.cover?`<a href="${href}" class="card-cover" tabindex="-1" aria-hidden="true"><img src="${escapeHtml(article.cover)}" alt="" loading="lazy"></a>`:''}<div class="article-card-content"><h3>${locked}<a href="${href}">${title}</a>${article.pinned?pin:''}</h3>${article.summary?`<p class="card-summary">${escapeHtml(article.summary)}</p>`:''}<div class="card-bottom"><time datetime="${escapeHtml(article.createdAt)}">${date}</time></div></div></article>`;
 }
-function pagination(current:number,pages:number,href:(page:number)=>string){return pages>1?`<nav class="pagination" aria-label="分页">${current>1?`<a href="${escapeHtml(href(current-1))}">← 上一页</a>`:''}<span>${current} / ${pages}</span>${current<pages?`<a href="${escapeHtml(href(current+1))}">下一页 →</a>`:''}</nav>`:'';}
-function homePosts(viewer:Viewer,query:PageQuery){
-  const folders=listFolders(),settings=getSettings();
+function pagination(current:number,pages:number,href:(page:number)=>string,archiveNav=false){return pages>1?`<nav class="pagination" aria-label="分页">${current>1?`<a ${archiveNav?'data-archive-nav="true" ':''}href="${escapeHtml(href(current-1))}">← 上一页</a>`:''}<span>${current} / ${pages}</span>${current<pages?`<a ${archiveNav?'data-archive-nav="true" ':''}href="${escapeHtml(href(current+1))}">下一页 →</a>`:''}</nav>`:'';}
+function homePosts(viewer:Viewer,query:PageQuery,snapshot:ContentSnapshot){
+  const {folders}=snapshot,settings=getSettings();
   const branches=settings.homeFolders.map(id=>descendantIds(folders,id));
-  const articles=listArticles().filter(a=>a.kind==='post'&&(!branches.length||branches.some(ids=>ids.has(a.folderId)))).map(a=>publicArticle(a,viewer,folders)).filter(a=>a!==null);
+  const articles=snapshot.articles.filter(a=>a.kind==='post'&&(!branches.length||branches.some(ids=>ids.has(a.folderId)))).map(a=>publicArticle(a,viewer,folders)).filter(a=>a!==null);
   const pinned=articles.filter(a=>a.pinned),recent=paginate(articles.filter(a=>!a.pinned),query.page,8);
   return `${pinned.length?`<section class="home-section"><div class="section-label"><h2>置顶文章</h2></div><div class="article-list">${pinned.map(a=>card(a)).join('')}</div></section>`:''}<section class="home-section"><div class="section-label"><h2>最近文章</h2><a href="/knowledge">全部文章 ↗</a></div><div class="article-list">${recent.items.map(a=>card(a)).join('')}</div>${!articles.length?'<div class="empty-state"><h2>暂无已发布文章</h2><a class="outline-link" href="/admin">写下第一篇文章 ↗</a></div>':''}${pagination(recent.current,recent.pages,n=>'/?page='+n)}</section>`;
 }
-function archive(viewer:Viewer,query:PageQuery){
-  const data=knowledgeData(viewer),selected=data.folders.find(f=>f.id===query.folder)||data.folders.find(f=>f.id==='root')!,ids=descendantIds(data.folders,selected.id),q=(query.q||'').trim().toLowerCase();
+function archive(viewer:Viewer,query:PageQuery,snapshot:ContentSnapshot){
+  const data=knowledgeData(viewer,snapshot),selected=data.folders.find(f=>f.id===query.folder)||data.folders.find(f=>f.id==='root')!,ids=descendantIds(data.folders,selected.id),q=(query.q||'').trim().toLowerCase();
   let articles=data.articles.filter(a=>(selected.id==='root'||ids.has(a.folderId))&&(!q||a.title.toLowerCase().includes(q)));
   if(query.sort==='title')articles=articles.toSorted((a,b)=>a.title.localeCompare(b.title,'zh-CN',{numeric:true}));else if(query.sort!=='order')articles=articles.toSorted((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
   const page=paginate(articles,query.page,15);
   const row=(id:string,depth:number):string=>data.folders.filter(f=>f.parentId===id&&f.id!=='root').map(f=>{
     const children=data.folders.some(child=>child.parentId===f.id),tag=children?'summary':'div';
-    const link=`<${tag} class="tree-row ${selected.id===f.id?'active':''}" style="padding-left:${depth*14+6}px"><span class="tree-chevron${children?'':' invisible'}">${chevron}</span><a class="tree-select" href="/knowledge?folder=${encodeURIComponent(f.id)}"><span class="tree-folder-icon">${folderIcon}</span><span class="tree-label">${escapeHtml(f.name)}</span>${f.locked?lock:''}</a></${tag}>`;
-    return children?`<details open class="page-folder-branch">${link}${row(f.id,depth+1)}</details>`:link;
+    const link=`<${tag} class="tree-row ${selected.id===f.id?'active':''}" style="padding-left:${depth*14+6}px"><span class="tree-chevron${children?'':' invisible'}">${chevron}</span><a class="tree-select" data-archive-nav="true" href="${escapeHtml(archiveHref(1,{folder:f.id,q:query.q,sort:query.sort}))}"><span class="tree-folder-icon">${folderIcon}</span><span class="tree-label">${escapeHtml(f.name)}</span>${f.locked?lock:''}</a></${tag}>`;
+    return children?`<details open data-folder-id="${escapeHtml(f.id)}" class="page-folder-branch">${link}${row(f.id,depth+1)}</details>`:link;
   }).join('');
-  return `<div class="knowledge-layout reading-width"><nav class="knowledge-tree" aria-label="文章分类"><div class="folder-tree"><a class="tree-root ${selected.id==='root'?'active':''}" href="/knowledge">${filesIcon}<span>所有文章</span></a>${row('root',0)}</div></nav><section class="knowledge-content" aria-label="${escapeHtml(selected.name)}"><div class="compact-list">${page.items.map(a=>card(a,true)).join('')}${articles.length?'':`<div class="empty-state"><h3>${q?'没有找到相关文章':'暂无已发布文章'}</h3></div>`}</div>${pagination(page.current,page.pages,n=>archiveHref(n,{folder:selected.id,q:query.q,sort:query.sort}))}</section></div>`;
+  return `<div data-archive-root="true" class="knowledge-layout reading-width"><nav class="knowledge-tree" aria-label="文章分类"><div class="folder-tree"><a class="tree-root ${selected.id==='root'?'active':''}" data-archive-nav="true" href="${escapeHtml(archiveHref(1,{q:query.q,sort:query.sort}))}">${filesIcon}<span>所有文章</span></a>${row('root',0)}</div></nav><section class="knowledge-content" aria-label="${escapeHtml(selected.name)}"><div class="compact-list">${page.items.map(a=>card(a,true)).join('')}${articles.length?'':`<div class="empty-state"><h3>${q?'没有找到相关文章':'暂无已发布文章'}</h3></div>`}</div>${pagination(page.current,page.pages,n=>archiveHref(n,{folder:selected.id,q:query.q,sort:query.sort}),true)}</section></div>`;
 }
 export async function renderHtmlPage(page:Pick<Article,'id'|'body'|'css'|'route'|'collection'>,viewer:Viewer,query:PageQuery={}){
   const sanitized=await sanitizePageHtml(page.body),$=load(sanitized,null,false);
+  let snapshot:ContentSnapshot|undefined;
   $('[data-page-slot]').each((_,element)=>{
-    const slot=$(element).attr('data-page-slot');let html='';
-    if(slot==='home-posts')html=homePosts(viewer,query);
-    else if(slot==='archive')html=archive(viewer,query);
+    const slot=$(element).attr('data-page-slot');let html='';snapshot??=contentSnapshot();
+    if(slot==='home-posts')html=homePosts(viewer,query,snapshot);
+    else if(slot==='archive')html=archive(viewer,query,snapshot);
     else if(slot==='collection'){
-      const folderId=$(element).attr('data-folder-id')||page.collection?.folderId||'',ids=descendantIds(listFolders(),folderId);
+      const folderId=$(element).attr('data-folder-id')||page.collection?.folderId||'',ids=descendantIds(snapshot.folders,folderId);
       const perPage=Math.min(50,Math.max(1,Number($(element).attr('data-per-page'))||page.collection?.perPage||10));
-      const articles=publicData(viewer).articles.filter(a=>ids.has(a.folderId)).toSorted((a,b)=>b.createdAt.localeCompare(a.createdAt));
+      const articles=publicData(viewer,snapshot).articles.filter(a=>ids.has(a.folderId)).toSorted((a,b)=>b.createdAt.localeCompare(a.createdAt));
       const result=paginate(articles,query.page,perPage),route=page.route||'/posts/'+page.id;
       html=`<section class="collection-list" aria-label="文章列表"><div class="article-list">${result.items.map(a=>card(a)).join('')}</div>${articles.length?'':'<p class="muted empty-state">暂无已发布文章。</p>'}${pagination(result.current,result.pages,n=>route+'?page='+n)}</section>`;
     }

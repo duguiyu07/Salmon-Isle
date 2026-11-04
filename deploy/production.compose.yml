@@ -10,7 +10,6 @@ services:
       SALMON_ORIGIN: ${SALMON_ORIGIN:?Set the HTTPS site origin}
       SALMON_SECURE_COOKIES: "true"
       SALMON_RELEASE_MANIFEST_URL: ${SALMON_RELEASE_MANIFEST_URL}
-      SALMON_DESKTOP_UPDATE_URL: ${SALMON_DESKTOP_UPDATE_URL}
     volumes:
       - ./data:/data:Z
     stop_grace_period: 30s

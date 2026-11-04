@@ -141,3 +141,17 @@ test('public source package includes deployment and license while excluding nest
   fs.writeFileSync(path.join(repo, '.github/workflows/release.yml'), 'steps:\n  - run: |\n      node -e "console.log(\'ready: ok\')"\n');
   assert.ok(sourcePackage(repo, '1.1.0').paths.some(file => file.endsWith('/.github/workflows/release.yml')));
 });
+
+test('release packaging rejects Windows shell bytes and preserves the Linux script unchanged', () => {
+  const repo = path.join(root, 'source');
+  for (const dir of ['src', 'scripts', 'tests', 'docs', 'public', '.github', 'deploy']) fs.mkdirSync(path.join(repo, dir), {recursive: true});
+  const script = path.join(repo, 'scripts/update-site.sh');
+  fs.writeFileSync(script, '#!/bin/sh\r\nset -eu\r\n');
+  assert.throws(() => sourcePackage(repo, '2.1.0'), /Shell.*LF.*scripts\/update-site\.sh/);
+  fs.writeFileSync(script, '\ufeff#!/bin/sh\nset -eu\n');
+  assert.throws(() => sourcePackage(repo, '2.1.0'), /Shell.*LF/);
+  const linux = Buffer.from('#!/bin/sh\nset -eu\n');
+  fs.writeFileSync(script, linux);
+  const zip = unzipSync(sourcePackage(repo, '2.1.0').bytes);
+  assert.deepEqual(Buffer.from(zip['Salmon-Isle-Source-2.1.0/scripts/update-site.sh']), linux);
+});

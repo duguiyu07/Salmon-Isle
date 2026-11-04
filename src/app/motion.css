@@ -12,7 +12,7 @@
 body{transition:background-color var(--ui-duration) ease,color var(--ui-duration) ease}
 :where(button,a,input,select,textarea,summary),
 .button,.icon-button,.outline-link,.text-button,.writing-toolbar button,
-.admin-primary-nav>button{
+.admin-primary-nav>:is(button,a){
   transition:background-color var(--ui-fast) ease,color var(--ui-fast) ease,
     border-color var(--ui-fast) ease,box-shadow var(--ui-fast) ease,
     opacity var(--ui-fast) ease,transform var(--ui-fast) var(--ui-ease);

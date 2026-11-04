@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createEmptyLibrary} from '../src/lib/content-repository';
+import {createEmptyLibrary} from '../src/lib/library-copy';
 import {withWorkspace,workspaceRoot,runtimeDir} from '../src/lib/library-context';
 import {saveArticle,saveFolder,findArticle,trashItem,restoreItem,atomicWrite} from '../src/lib/storage';
 import {addMedia,queryMedia,mediaReferences,mediaUrl,deleteMedia,getMedia} from '../src/lib/media';

@@ -3,6 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {listArticles,findArticle,saveArticle,trashItem,atomicWrite} from './storage';
 import {dataDir} from './paths';
+import {libraryPath} from './library-context';
 import {renderMarkdown} from './markdown';
 import {normalizePageRoute} from './page-routes';
 import {readEditorDraft} from './editor-drafts';
@@ -19,7 +20,7 @@ export async function convertLegacyPage(page:Article,patch:Partial<Article>={}){
   if(draft){
     const document={...draft.document,contentFormat:'html' as const,css:draft.document.css||'',route:draft.document.route||route};
     if(draft.document.contentFormat!=='html')document.body=(await renderMarkdown(document.body,{pageTitle:true})).html+(document.template==='collection'?'\n<div data-page-slot="collection"></div>':'');
-    atomicWrite(path.join(dataDir(),'editor-drafts',page.id+'.json'),JSON.stringify({...draft,baseVersion:saved.version,draftVersion:randomUUID(),document}));
+    atomicWrite(libraryPath('editor-drafts',page.id+'.json'),JSON.stringify({...draft,baseVersion:saved.version,draftVersion:randomUUID(),document}));
   }
   return saved;
 }

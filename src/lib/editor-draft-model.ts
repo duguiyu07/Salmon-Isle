@@ -8,8 +8,9 @@ export interface EditorDraft {
   baseDocument?:Partial<ArticleMeta>&{body:string;folderId:string};
 }
 export type ClientEditorDraft=Omit<EditorDraft,'document'|'baseDocument'>&{document:DraftDocument};
-export interface EditorDraftSummary {articleId:string;title:string;folderId:string;savedAt:string}
+export interface EditorDraftSummary {articleId:string;title:string;folderId:string;savedAt:string;baseVersion:string;draftVersion:string}
 export type ClientArticle=Omit<Article,'passwordHash'>&{hasPassword:boolean};
+export type ClientArticleSummary=Omit<ClientArticle,'body'|'css'>;
 export interface DraftSaveResult {article:ClientArticle;draft:ClientEditorDraft}
 export interface DraftTokens {baseVersion:string|null;draftVersion:string|null}
 export function draftFingerprint(document:DraftDocument){

@@ -28,10 +28,10 @@ export default async function Knowledge({searchParams}:{searchParams:Promise<{fo
       <p className="muted index-intro">*可在此查看网站的所有内容。归类为杂项/其他的文章除外，这类文章位于 MISC 页面。</p>
       <nav className="index-shortcuts" aria-label="其他归档"><Link className="shortcut-card" href="/misc"><strong>MISC</strong><span>杂谈 / 日常类文章归档</span></Link><Link className="shortcut-card" href="/links"><strong>Links</strong><span>相关网站 / 友情链接归档</span></Link></nav>
     </header>
-    <div className="knowledge-layout reading-width"><PublicFolderNav folders={data.folders} current={selected.id}/>
+    <div className="knowledge-layout reading-width"><PublicFolderNav folders={data.folders} current={selected.id} q={params.q} sort={params.sort}/>
       <section className="knowledge-content" aria-label={selected.name}><div className="compact-list">{page.items.map(a=><CompactArticle key={a.id} article={a}/>)}
       {!articles.length&&<div className="empty-state"><FolderOpen size={30}/><h3>{q?'没有找到相关文章':'暂无已发布文章'}</h3>{q&&<p>试试其他关键词。</p>}</div>}</div>
-      {page.pages>1&&<nav className="pagination" aria-label="分页">{page.current>1&&<Link href={archiveHref(page.current-1,filters)}>← 上一页</Link>}<span>{page.current} / {page.pages}</span>{page.current<page.pages&&<Link href={archiveHref(page.current+1,filters)}>下一页 →</Link>}</nav>}
+      {page.pages>1&&<nav className="pagination" aria-label="分页">{page.current>1&&<Link scroll={false} href={archiveHref(page.current-1,filters)}>← 上一页</Link>}<span>{page.current} / {page.pages}</span>{page.current<page.pages&&<Link scroll={false} href={archiveHref(page.current+1,filters)}>下一页 →</Link>}</nav>}
       </section>
     </div>
   </main>;

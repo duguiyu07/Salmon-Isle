@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { cookies,headers } from 'next/headers';
-import {isDesktop} from './library-context';
+import { cookies } from 'next/headers';
 import { dataDir } from './paths';
 import { db } from './db';
 import { digest, token } from './crypto';
@@ -14,7 +13,6 @@ export function adminHash() {
   return fs.existsSync(file) ? String(JSON.parse(fs.readFileSync(file,'utf8')).hash || '') : '';
 }
 export async function getViewer(): Promise<Viewer> {
-  if(isDesktop()&&process.env.SALMON_DESKTOP_TOKEN&&(await headers()).get('x-salmon-desktop-token')===process.env.SALMON_DESKTOP_TOKEN)return {admin:true,grants:new Set()};
   const jar = await cookies(); const adminToken = jar.get(ADMIN_COOKIE)?.value;
   let admin = false;
   if (adminToken) {

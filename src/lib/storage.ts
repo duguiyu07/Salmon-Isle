@@ -6,7 +6,7 @@ import { Article, ArticleMeta, Folder, SiteSettings, defaultSettings, AppError, 
 import { contentPath, dataDir, initDirs, relativePath, safeName, within } from './paths';
 import { digest, hashPassword } from './crypto';
 import { audit, indexDb } from './db';
-import {libraryPath,libraryRoot,assertLibraryWritable,isDesktop,withPublicLibrary,directLibraryRoot} from './library-context';
+import {libraryPath,libraryRoot,assertLibraryWritable,withPublicLibrary} from './library-context';
 import {normalizePageRoute} from './page-routes';
 import postcss from 'postcss';
 const registry=globalThis as typeof globalThis&{salmonLibraryCaches?:{folders:Map<string,Folder[]>;articles:Map<string,Map<string,string>>}};
@@ -93,6 +93,8 @@ export function listArticles(): Article[] {
   articlePaths.set(libraryRoot(),new Map(articles.map(article=>[article.id,article.path])));return articles.sort((a,b) => a.order-b.order || b.createdAt.localeCompare(a.createdAt));
 }
 export function findArticle(id: string) {const paths=articlePaths.get(libraryRoot());if(!paths)return listArticles().find(a=>a.id===id);const p=paths.get(id);if(!p)return undefined;const file=contentPath(p);if(!fs.existsSync(file)){articlePaths.delete(libraryRoot());return listArticles().find(a=>a.id===id);}const raw=fs.readFileSync(file,'utf8'),{meta,body}=splitMarkdown(raw),dir=path.posix.dirname(p);return {...normalizeMeta(meta),body,path:p,folderId:listFolders().find(folder=>folder.path===(dir==='.'?'':dir))?.id||'root',version:digest(raw)};}
+export interface ContentSnapshot {articles:Article[];folders:Folder[]}
+export function contentSnapshot():ContentSnapshot{return {folders:listFolders(),articles:listArticles()};}
 export function articleMeta(article: Article): ArticleMeta {
   const { body: _body, path: _path, folderId: _folder, version: _version, ...meta } = article; return meta;
 }
@@ -120,7 +122,6 @@ export function saveArticle(input: Partial<ArticleMeta> & { body: string; folder
     else if(meta.status==='published')throw new AppError('发布前请填写页面地址');
   }
   const target = contentPath(path.posix.join(folder.path, `${safeName(input.filename || meta.title)}--${meta.id}.md`));
-  if (existing&&!directLibraryRoot()) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
   atomicWrite(target, markdownFile(meta, input.body));
   if (existing && contentPath(existing.path) !== target) fs.unlinkSync(contentPath(existing.path));
   articlePaths.get(libraryRoot())?.set(meta.id,relativePath(target));
@@ -132,7 +133,6 @@ export function writeImportedArticle(meta: ArticleMeta, body: string, folderId: 
   const existing = findArticle(meta.id);
   if (existing && !replace) return existing;
   const folder = listFolders().find(f => f.id === folderId); if (!folder) throw new AppError('目标文件夹不存在');
-  if (existing&&!directLibraryRoot()) atomicWrite(path.join(dataDir(), 'history', meta.id, `${Date.now()}-${randomUUID()}.md`), markdownFile(articleMeta(existing), existing.body));
   const target = contentPath(path.posix.join(folder.path, `${safeName(meta.title)}--${meta.id}.md`));
   atomicWrite(target, markdownFile(meta, body));
   if (existing && contentPath(existing.path) !== target) fs.unlinkSync(contentPath(existing.path));
@@ -212,13 +212,12 @@ export function getSettings(): SiteSettings {
   return { ...defaultSettings,...input,giscus:{...defaultSettings.giscus,...input.giscus} };
 }
 export function saveSettings(input: SiteSettings) {
-  if(isDesktop())throw new AppError('网站设置请在在线后台修改',403);
   if (!input.title?.trim()) throw new AppError('站点名称不能为空');
   if (!Array.isArray(input.navigation) || input.navigation.some(n => !/^\/(?!\/)/.test(n.href))) throw new AppError('导航地址必须是站内路径');
   if (input.logo && !/^(\/(?!\/)|https:\/\/)/.test(input.logo)) throw new AppError('无效的 Logo 地址');
   if (input.giscus.repo && !/^[\w.-]+\/[\w.-]+$/.test(input.giscus.repo)) throw new AppError('无效的 Giscus 仓库');
   const publicFolders=withPublicLibrary(()=>listFolders());
-  if (input.knowledgeRootId && !publicFolders.some(f => f.id === input.knowledgeRootId && f.id !== 'root')) throw new AppError('前台目录根文件夹不存在，请先提交并同步文件夹');
-  if(input.homeFolders.some(id=>!publicFolders.some(folder=>folder.id===id)))throw new AppError('首页引用的文件夹尚未同步');
+  if (input.knowledgeRootId && !publicFolders.some(f => f.id === input.knowledgeRootId && f.id !== 'root')) throw new AppError('前台目录根文件夹不存在，请先创建文件夹');
+  if(input.homeFolders.some(id=>!publicFolders.some(folder=>folder.id===id)))throw new AppError('首页引用的文件夹不存在');
   atomicWrite(path.join(dataDir(),'site.yml'),YAML.stringify(input)); audit('settings.update','site'); return getSettings();
 }

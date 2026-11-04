@@ -25,10 +25,10 @@ export function clientEditorDraft(draft:EditorDraft):ClientEditorDraft{
   const {baseDocument:_baseDocument,...safe}=draft;
   return {...safe,document:{...document,id:draft.articleId,hasPassword:!!passwordHash}};
 }
-export function listEditorDrafts():EditorDraftSummary[]{
-  return listArticles().flatMap(article=>{
+export function listEditorDrafts(articles=listArticles()):EditorDraftSummary[]{
+  return articles.flatMap(article=>{
     const draft=readEditorDraft(article.id);
-    return draft?[{articleId:article.id,title:draft.document.title||'无标题文章',folderId:draft.document.folderId,savedAt:draft.savedAt}]:[];
+    return draft?[{articleId:article.id,title:draft.document.title||'无标题文章',folderId:draft.document.folderId,savedAt:draft.savedAt,baseVersion:draft.baseVersion,draftVersion:draft.draftVersion}]:[];
   });
 }
 function checkVersions(article:Article,draft:EditorDraft|null,tokens:DraftTokens){

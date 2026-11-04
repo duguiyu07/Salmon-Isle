@@ -12,6 +12,7 @@ import { isHtmlBlock } from './html-block';
 import { schemaCtx,remarkCtx } from '@milkdown/kit/core';
 import { ParserState,SerializerState } from '@milkdown/kit/transformer';
 import {remarkImageCaptions} from './image-caption';
+import {inlineColors,inlineColorStyle} from './inline-color';
 export const parseVisualMarkdown=(ctx:any,source:string)=>ParserState.create(ctx.get(schemaCtx),ctx.get(remarkCtx))(source);
 export const serializeVisualMarkdown=(ctx:any,doc:any)=>SerializerState.create(ctx.get(schemaCtx),ctx.get(remarkCtx))(doc);
 
@@ -42,7 +43,7 @@ function htmlSpans(this:any) {
     visit(tree,(node:any,_index:any,parent:any)=>{
       if(node.type==='containerDirective'&&!containerNames.includes(node.name)){node.value=stringify.stringify({type:'root',children:[structuredClone(node)]});node.type='rawBlock';delete node.children;}
       else if(node.type==='leafDirective'&&node.name!=='embed'){node.value=stringify.stringify({type:'root',children:[structuredClone(node)]});node.type='rawBlock';}
-      else if(node.type==='textDirective'&&node.name!=='spoiler'){
+      else if(node.type==='textDirective'&&!['spoiler','text'].includes(node.name)){
         const literal=stringify.stringify({type:'root',children:[{type:'paragraph',children:[structuredClone(node)]}]}).trim();
         if(!node.children?.length&&!Object.keys(node.attributes||{}).length){node.type='text';node.value=literal;delete node.children;}
         else{node.type='rawInline';node.value=literal;delete node.children;}
@@ -80,6 +81,13 @@ export const styledSpanNode=$node('salmon_styled_span',()=>({
   toDOM:node=>[node.attrs.tag,{'data-salmon-style':'true','data-tag':node.attrs.tag,style:cleanInlineStyle(node.attrs.style)},0],
   parseMarkdown:{match:node=>node.type==='styledSpan',runner:(state,node,type)=>{state.openNode(type,{tag:node.tag,style:node.style});state.next(node.children as any);state.closeNode();}},
   toMarkdown:{match:node=>node.type.name==='salmon_styled_span',runner:(state,node)=>{state.openNode('styledSpan',undefined,{tag:node.attrs.tag,style:node.attrs.style});state.next(node.content);state.closeNode();}},
+}));
+export const coloredTextNode=$node('salmon_colored_text',()=>({
+  group:'inline',inline:true,content:'inline*',attrs:{colors:{default:{}}},
+  parseDOM:[{tag:'span[data-text-color],span[data-text-background]',getAttrs:(dom:HTMLElement)=>({colors:inlineColors({color:dom.dataset.textColor,background:dom.dataset.textBackground})})}],
+  toDOM:node=>['span',{class:'inline-colored-text',style:inlineColorStyle(node.attrs.colors),'data-text-color':node.attrs.colors.color,'data-text-background':node.attrs.colors.background},0],
+  parseMarkdown:{match:node=>node.type==='textDirective'&&node.name==='text',runner:(state,node,type)=>{state.openNode(type,{colors:inlineColors((node.attributes||{}) as Record<string,unknown>)});state.next(node.children as any);state.closeNode();}},
+  toMarkdown:{match:node=>node.type.name==='salmon_colored_text',runner:(state,node)=>{state.openNode('textDirective',undefined,{name:'text',attributes:node.attrs.colors});state.next(node.content);state.closeNode();}},
 }));
 export const spoilerNode=$node('salmon_spoiler',()=>({
   group:'inline',inline:true,content:'inline*',
@@ -125,4 +133,4 @@ ctx.update(codeBlockSchema.key,(previous:any)=>(context:any)=>{
     toMarkdown:{match:(node:any)=>node.type.name==='code_block',runner:(state:any,node:any)=>state.addNode('code',undefined,node.textContent,{lang:node.attrs.language,meta:node.attrs.meta})},
   };
 });}
-export const visualSyntax:MilkdownPlugin[]=[...directivePlugin,...mathPlugin,...cjkPlugin,...imageCaptionPlugin,...inlineHtmlPlugin,...containerNodes,...mathNodes,styledSpanNode,spoilerNode,htmlBlockNode,rawBlockNode,rawInlineNode];
+export const visualSyntax:MilkdownPlugin[]=[...directivePlugin,...mathPlugin,...cjkPlugin,...imageCaptionPlugin,...inlineHtmlPlugin,...containerNodes,...mathNodes,styledSpanNode,coloredTextNode,spoilerNode,htmlBlockNode,rawBlockNode,rawInlineNode];
